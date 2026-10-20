@@ -26,6 +26,7 @@ RUN set -eux; \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        git \
         libicu-dev \
         libmariadb-dev \
         libpq-dev \

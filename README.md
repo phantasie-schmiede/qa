@@ -20,9 +20,15 @@ holds the single source of truth for:
     "require-dev": {
         "psbits/qa": "@dev"
     },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/phantasie-schmiede/qa.git"
+        }
+    ],
     "scripts": {
-        "post-install-cmd": ["bin/qa link"],
-        "post-update-cmd": ["bin/qa link"]
+        "post-install-cmd": [".Build/bin/qa link"],
+        "post-update-cmd": [".Build/bin/qa link"]
     }
 }
 ```
