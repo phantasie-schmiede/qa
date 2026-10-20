@@ -121,9 +121,20 @@ export COMPOSER_NO_SECURITY_BLOCKING=1
 
 cp composer.json composer-matrix.json
 
-if [ -d .Build/vendor/psbits/qa ]; then
+# Composer installs the path repository as a symlink into .Build/qa-src, so
+# a leg following a previous leg must not wipe the staging it is pointing
+# at - a fresh staging is only taken from the installed package otherwise.
+if [ -L .Build/vendor/psbits/qa ] && [ -d .Build/qa-src ]; then
+    :
+elif [ -d .Build/vendor/psbits/qa ]; then
     rm -rf .Build/qa-src
-    cp -R .Build/vendor/psbits/qa .Build/qa-src
+    cp -R "$(readlink -f .Build/vendor/psbits/qa)" .Build/qa-src
+else
+    echo "error: psbits/qa is not installed in .Build; run composer update in the repository first" >&2
+    exit 1
+fi
+
+if [ -d .Build/qa-src ]; then
     php -r '
         $file = "composer-matrix.json";
         $data = json_decode(file_get_contents($file), true);
