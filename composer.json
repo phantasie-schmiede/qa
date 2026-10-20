@@ -1,0 +1,27 @@
+{
+    "name": "psbits/qa",
+    "description": "Shared QA infrastructure for PSBits TYPO3 extensions: test matrix scripts, Docker setup, linter and fixer configuration, custom PHP CS Fixer rules",
+    "type": "library",
+    "license": "GPL-3.0-or-later",
+    "require": {
+        "php": "^8.3",
+        "friendsofphp/php-cs-fixer": "^3.95"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11"
+    },
+    "autoload": {
+        "psr-4": {
+            "PSBits\\Qa\\": "src/"
+        }
+    },
+    "bin": [
+        "bin/qa"
+    ],
+    "scripts": {
+        "test": "phpunit -c tests/phpunit.xml.dist"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

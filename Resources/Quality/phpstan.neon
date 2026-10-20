@@ -1,0 +1,9 @@
+# Shared PHPStan baseline for psbits extensions.
+#
+# The repository's Build/Quality/phpstan.neon.dist includes this file and adds
+# the repo-specific parts: tmpDir (PHPStan resolves it relative to the
+# including config, so it cannot live here), paths, excludePaths, optional
+# ignoreErrors and the saschaegerer/phpstan-typo3 extension include (not every
+# repository requires that package).
+parameters:
+  level: 6

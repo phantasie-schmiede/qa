@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - '*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php:
+          - '8.3'
+          - '8.4'
+          - '8.5'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor
+          key: vendor-${{ runner.os }}-p${{ matrix.php }}-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            vendor-${{ runner.os }}-p${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run tests
+        run: vendor/bin/phpunit -c tests/phpunit.xml.dist
+
+      - name: Lint shell scripts
+        run: |
+          shellcheck Resources/Testing/Scripts/*.sh
+          php -l bin/qa
+          php -l src/Console/Application.php
+          php -l Resources/Testing/renderPhpunitXml.php
+          for fixer in src/PhpCsFixer/Fixer/*.php; do php -l "$fixer"; done

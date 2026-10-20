@@ -1,0 +1,98 @@
+# Test matrix runner for a psbits extension (shared by all repositories via
+# the psbits/qa package).
+#
+# Build the test images first:
+#   sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/buildTestImages.sh
+#
+# Usage (run from the repository root):
+#   composer test:docker                                full Docker matrix
+#   composer test:docker -- 13.4 --db postgres          single leg
+#   PHP_VERSION=8.3 composer test:docker -- 13.4        single leg on PHP 8.3
+#
+# Equivalent raw compose commands (ROOT_DIR and PSBITS_QA_EXTENSION are
+# required; runDockerTests.sh exports them, raw invocations must set them):
+#   ROOT_DIR=$(pwd) PSBITS_QA_EXTENSION=debug docker compose -f .Build/vendor/psbits/qa/Resources/Testing/Docker/docker-compose.yml run --rm tests sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runTests.sh 13.4
+#
+# Plain "docker compose run --rm tests" (no command override) runs the full
+# local matrix inside the selected PHP image, via
+# .Build/vendor/psbits/qa/Resources/Testing/Scripts/runLocalTests.sh.
+# The Docker matrix itself is orchestrated from the host (composer test:docker
+# / runDockerTests.sh), which starts the matching service.
+#
+# The repository is bind-mounted at /repo. runTests.sh never touches tracked
+# files; the generated composer-matrix.json / composer-matrix.lock and the
+# tested core stay in the working tree between runs. The composer home lives
+# in a named volume, so package downloads are cached across runs.
+#
+# PSBITS_QA_EXTENSION names the test image (psbits/<extension>-test).
+# PHP_VERSION selects the test image version (8.3, 8.4 or 8.5).
+
+services:
+  #---------------------------------------------------------------------------------------------------------------------
+  # databases for the functional test suite (started on demand via depends_on)
+  #---------------------------------------------------------------------------------------------------------------------
+  mariadb:
+    image: mariadb:10.11
+    environment:
+      MYSQL_ROOT_PASSWORD: funcp
+    tmpfs:
+      - /var/lib/mysql/:rw,noexec,nosuid
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: typo3
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: funcp
+    tmpfs:
+      - /var/lib/postgresql/data:rw,noexec,nosuid
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  #---------------------------------------------------------------------------------------------------------------------
+  # test runners
+  #---------------------------------------------------------------------------------------------------------------------
+  tests:
+    image: psbits/${PSBITS_QA_EXTENSION:?set PSBITS_QA_EXTENSION to the extension name}-test:${PHP_VERSION:-8.4}
+    working_dir: /repo
+    volumes:
+      - ${ROOT_DIR:?set ROOT_DIR to the repository root}:/repo
+      - composer-home:/home/builder/.composer
+    command: ["sh", ".Build/vendor/psbits/qa/Resources/Testing/Scripts/runLocalTests.sh"]
+
+  # Full matrix leg against a real MariaDB.
+  tests-mysql:
+    extends: tests
+    environment:
+      typo3DatabaseDriver: pdo_mysql
+      typo3DatabaseHost: mariadb
+      typo3DatabaseUsername: root
+      typo3DatabasePassword: funcp
+      typo3DatabaseName: typo3
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  # Full matrix leg against a real PostgreSQL.
+  tests-postgres:
+    extends: tests
+    environment:
+      typo3DatabaseDriver: pdo_pgsql
+      typo3DatabaseHost: postgres
+      typo3DatabaseUsername: postgres
+      typo3DatabasePassword: funcp
+      typo3DatabaseName: typo3
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  composer-home:
