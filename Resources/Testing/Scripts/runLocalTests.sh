@@ -19,6 +19,7 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
 
 LEG_NO=0

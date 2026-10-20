@@ -33,6 +33,7 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 
+# shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
 
 BASELINE_FILE="$REPO_ROOT/Build/Quality/coverage-baseline.json"
@@ -85,6 +86,7 @@ fi
 
 # Read one baseline entry; prints nothing for null (report-only).
 baseline_value() {
+    # shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
     php -r '
         $value = json_decode(file_get_contents($argv[1]), true)[$argv[2]] ?? null;
         echo is_null($value) ? "" : (string) $value;
@@ -94,6 +96,7 @@ baseline_value() {
 # Line coverage percentage (two decimals) from a Clover report, or nothing
 # if the report cannot be read.
 coverage_percent() {
+    # shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
     php -r '
         $xml = simplexml_load_file($argv[1]);
         if ($xml === false) {
@@ -116,6 +119,7 @@ coverage_percent() {
 update_baseline() {
     SUITE="$1"
     ACTUAL="$2"
+    # shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
     php -r '
         $data = json_decode(file_get_contents($argv[1]), true);
         if (!is_array($data)) {
@@ -153,6 +157,7 @@ check_suite() {
         return
     fi
 
+    # shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
     BELOW="$(php -r 'echo (float) $argv[1] + (float) $argv[2] < (float) $argv[3] ? "1" : "0";' "$ACTUAL" "$COVERAGE_TOLERANCE" "$BASELINE")"
     if [ "$BELOW" = "1" ]; then
         printf '  %-12s %s%s%s%%  (baseline %s%% - %s%s%s)\n' \

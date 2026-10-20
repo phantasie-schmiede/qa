@@ -49,6 +49,7 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 
+# shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
 
 CORE_VERSION=''
@@ -135,6 +136,7 @@ else
 fi
 
 if [ -d .Build/qa-src ]; then
+    # shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
     php -r '
         $file = "composer-matrix.json";
         $data = json_decode(file_get_contents($file), true);
@@ -174,6 +176,7 @@ fi
 # do not need.
 # ---------------------------------------------------------------------------
 banner "step 2/4 — composer update (typo3/cms-core:^${CORE_VERSION}${LOWEST_NOTE})"
+# shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
 INSTALLED_CORE="$(php -r '
     $file = ".Build/vendor/composer/installed.json";
     if (is_file($file)) {
@@ -195,6 +198,7 @@ INSTALLED_CORE="$(php -r '
 # matches the target major, so the wipe is the fallback.
 [ "${INSTALLED_CORE%%.*}" = "${CORE_VERSION%%.*}" ] || rm -rf .Build/vendor
 rm -f composer-matrix.lock
+# shellcheck disable=SC2086  # intentional: ${LOWEST} expands to two flags when --lowest is set
 composer update \
     --with "typo3/cms-core:^${CORE_VERSION}" \
     -W \

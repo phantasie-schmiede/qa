@@ -33,6 +33,7 @@ REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 
 cd "$REPO_ROOT"
 
+# shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
 
 export ROOT_DIR="$REPO_ROOT"
@@ -133,6 +134,7 @@ done
 set +f
 
 DB='sqlite'
+# shellcheck disable=SC2086  # intentional: re-split the preserved argument list
 set -- $ARGS
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -157,4 +159,5 @@ esac
 # No exec here, so the EXIT trap (cleanup) still runs. The tokens are safe
 # for word splitting (see above).
 set -f
+# shellcheck disable=SC2086  # intentional: forward the preserved argument list
 run_leg "$SERVICE" $ARGS

@@ -44,6 +44,7 @@ stage_ca() {
 if [ -n "${EXTRA_CA_FILES:-}" ]; then
     OLD_IFS="$IFS"
     IFS=':'
+    # shellcheck disable=SC2086  # intentional: IFS=':' splits the colon-separated list
     stage_ca $EXTRA_CA_FILES
     IFS="$OLD_IFS"
 else
@@ -59,7 +60,7 @@ else
     stage_ca /usr/local/share/ca-certificates/*.crt /usr/local/share/ca-certificates/*.pem
 fi
 
-CA_COUNT="$(ls -1A "$CA_STAGE_DIR" | wc -l | tr -d ' ')"
+CA_COUNT="$(find "$CA_STAGE_DIR" -type f | wc -l | tr -d ' ')"
 echo "Staged $CA_COUNT CA certificate(s) into $(basename "$CA_STAGE_DIR")"
 
 # The Dockerfile lives in the package; copy it into the staged build context
