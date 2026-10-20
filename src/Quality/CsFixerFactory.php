@@ -19,8 +19,13 @@ use PSBits\Qa\PhpCsFixer\Fixer\PropertyNamesAlignmentFixer;
  */
 final class CsFixerFactory
 {
-    /** @param list<string> $directories repository-relative directories to analyse */
-    public static function create(array $directories): Config
+    /**
+     * @param list<string> $directories repository-relative directories to analyse
+     * @param list<string> $excludes    repository-relative directories to skip
+     *                                   (e.g. test fixtures that hold expected
+     *                                   output data instead of code to lint)
+     */
+    public static function create(array $directories, array $excludes = []): Config
     {
         $root = getcwd();
         $paths = array_filter(
@@ -31,6 +36,11 @@ final class CsFixerFactory
         $finder = Finder::create()
             ->in(array_map(static fn (string $directory): string => $root . '/' . $directory, $paths))
             ->name('*.php');
+
+        foreach ($excludes as $exclude) {
+            $pattern = '/' . str_replace('/', '\/', $exclude) . '/';
+            $finder = $finder->notPath($pattern);
+        }
 
         return (new Config())->setRiskyAllowed(true)
             ->registerCustomFixers([

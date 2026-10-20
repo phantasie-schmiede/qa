@@ -50,6 +50,28 @@ final class CsFixerConfigTest extends TestCase
         );
     }
 
+    public function testConfigHonoursExcludeDirectories(): void
+    {
+        mkdir($this->root . '/Tests/Fixtures', 0755, true);
+        file_put_contents($this->root . '/Tests/Fixtures/Expected.php', "<?php\n");
+        chdir($this->root);
+        $config = \PSBits\Qa\Quality\CsFixerFactory::create(['Classes', 'Configuration', 'Tests'], ['Tests/Fixtures']);
+
+        $files = [];
+        foreach ($config->getFinder() as $file) {
+            $files[] = $file->getRealPath();
+        }
+        sort($files);
+        self::assertSame(
+            [
+                $this->root . '/Classes/Classes.php',
+                $this->root . '/Configuration/Configuration.php',
+                $this->root . '/Tests/Tests.php',
+            ],
+            $files,
+        );
+    }
+
     public function testConfigSkipsMissingDirectories(): void
     {
         unlink($this->root . '/Configuration/Configuration.php');
