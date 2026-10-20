@@ -28,18 +28,26 @@ final class CsFixerFactory
     public static function create(array $directories, array $excludes = []): Config
     {
         $root = getcwd();
+        $paths = array_values(array_diff($directories, $excludes));
         $paths = array_filter(
-            $directories,
+            $paths,
             static fn (string $directory): bool => is_dir($root . '/' . $directory),
         );
 
+        // notPath() patterns are relative to the in() directories, so an
+        // exclusion is expressed relative to the scope directory it lives in.
         $finder = Finder::create()
             ->in(array_map(static fn (string $directory): string => $root . '/' . $directory, $paths))
             ->name('*.php');
 
-        foreach ($excludes as $exclude) {
-            $pattern = '/' . str_replace('/', '\/', $exclude) . '/';
-            $finder = $finder->notPath($pattern);
+        foreach ($paths as $directory) {
+            foreach ($excludes as $exclude) {
+                $prefix = $directory . '/';
+                if (str_starts_with($exclude, $prefix)) {
+                    $relative = substr($exclude, strlen($prefix));
+                    $finder = $finder->notPath('#^' . preg_quote($relative, '#') . '/#');
+                }
+            }
         }
 
         return (new Config())->setRiskyAllowed(true)
