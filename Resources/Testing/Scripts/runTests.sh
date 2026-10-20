@@ -19,6 +19,13 @@
 # coexist with the matrix legs) are applied to a generated composer-matrix.json
 # that composer addresses through the COMPOSER environment variable.
 #
+# The shared psbits/qa package is resolved from a path repository in the
+# matrix environment: the materialized copy is staged into .Build/qa-src
+# (outside the vendor wipe) and the vcs entry is dropped. Resolving it from
+# GitHub instead would hit the unauthenticated api.github.com rate limit
+# (composer's vcs driver queries it for branches) and fall back to an SSH
+# clone, which the containers and CI hosts have no credentials for.
+#
 # composer-matrix.lock is wiped before every run. .Build/vendor is only
 # wiped when it was built for a different core major: core 13.4 requires
 # typo3/class-alias-loader ^1.2 and core 14.3 requires ^2.0.1, and
@@ -113,6 +120,25 @@ export COMPOSER=composer-matrix.json
 export COMPOSER_NO_SECURITY_BLOCKING=1
 
 cp composer.json composer-matrix.json
+
+if [ -d .Build/vendor/psbits/qa ]; then
+    rm -rf .Build/qa-src
+    cp -R .Build/vendor/psbits/qa .Build/qa-src
+    php -r '
+        $file = "composer-matrix.json";
+        $data = json_decode(file_get_contents($file), true);
+        $repos = [["type" => "path", "url" => ".Build/qa-src"]];
+        foreach ($data["repositories"] ?? [] as $repo) {
+            $url = $repo["url"] ?? "";
+            if (str_contains($url, "phantasie-schmiede/qa.git") || str_contains($url, "psbits/qa.git")) {
+                continue;
+            }
+            $repos[] = $repo;
+        }
+        $data["repositories"] = $repos;
+        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+    '
+fi
 
 if grep -q '"saschaegerer/phpstan-typo3"' composer.json; then
     composer remove --dev --no-update --no-interaction saschaegerer/phpstan-typo3
