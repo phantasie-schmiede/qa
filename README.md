@@ -55,7 +55,9 @@ Adopt it by copying `Resources/CI/ci.yml` from this package into
 `bin/qa check` (run by the CI qa job) fails on drift. Repositories without
 `Tests/Functional` run unit-only: the functional suite is skipped by
 `runTests.sh`/`runCoverage.sh` and the database legs (MariaDB/PostgreSQL)
-are skipped entirely by the shared workflow.
+are skipped entirely by the shared workflow. The `TYPO3_API_TOKEN` secret
+is optional: repositories without it skip the TER publish, everything else
+runs unchanged.
 
 The extension keeps only its repo-specific QA files:
 `Build/Quality/phpstan.neon.dist` (thin shim over the package baseline),
