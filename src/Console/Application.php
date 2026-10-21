@@ -8,8 +8,11 @@ final class Application
 {
     private const USAGE = <<<text
     Usage:
-      qa link   Install the git pre-commit hook and the psbits-qa skill symlink
-      qa check  Verify hook and skill link match the installed package (CI gate)
+      qa link   Install the git pre-commit hook and the psbits-qa skill
+                symlink, and sync the caller CI workflow (.github/workflows/ci.yml)
+                when present
+      qa check  Verify hook, skill link and caller CI workflow match the
+                installed package (CI gate)
       qa paths  Print the locations of the shared QA resources
 
     The repository root is taken from PSBITS_QA_REPO_ROOT or the current
@@ -69,6 +72,16 @@ final class Application
         return '../../.Build/vendor/psbits/qa/Resources/Skill/psbits-qa';
     }
 
+    private static function callerWorkflow(string $root): string
+    {
+        return $root . '/.github/workflows/ci.yml';
+    }
+
+    private static function callerWorkflowTemplate(): string
+    {
+        return self::packageRoot() . '/Resources/CI/ci.yml';
+    }
+
     private static function link(string $root): int
     {
         $hooks = $root . '/.git/hooks';
@@ -88,26 +101,48 @@ final class Application
 
         $link = self::skillLink($root);
         $target = self::skillTarget();
-        if (is_link($link)) {
-            if (readlink($link) === $target && is_dir($link)) {
-                echo 'skill link unchanged' . "\n";
-                return 0;
+        $linkOk = is_link($link) && readlink($link) === $target && is_dir($link);
+        if ($linkOk) {
+            echo 'skill link unchanged' . "\n";
+        } else {
+            if (is_link($link)) {
+                unlink($link);
+            } elseif (file_exists($link)) {
+                self::remove($link);
             }
-            unlink($link);
-        } elseif (file_exists($link)) {
-            self::remove($link);
+            $linkDir = dirname($link);
+            if (!is_dir($linkDir) && !mkdir($linkDir, 0755, true)) {
+                throw new \RuntimeException('could not create ' . $linkDir);
+            }
+            if (!symlink($target, $link)) {
+                throw new \RuntimeException('could not create skill link at ' . $link);
+            }
+            if (!is_dir($link)) {
+                throw new \RuntimeException('skill link target does not resolve: ' . $target . ' (run composer install first)');
+            }
+            echo 'installed skill link' . "\n";
         }
-        $linkDir = dirname($link);
-        if (!is_dir($linkDir) && !mkdir($linkDir, 0755, true)) {
-            throw new \RuntimeException('could not create ' . $linkDir);
+
+        // Only manage the caller workflow when it is present: a repository
+        // without a ci.yml has no shared CI, and composer must not enable
+        // it behind the repository's back.
+        $workflow = self::callerWorkflow($root);
+        $source = self::callerWorkflowTemplate();
+        if (!file_exists($workflow)) {
+            echo 'caller workflow not present (skipped)' . "\n";
+        } elseif (self::filesIdentical($workflow, $source)) {
+            echo 'caller workflow unchanged' . "\n";
+        } else {
+            $workflowDir = dirname($workflow);
+            if (!is_dir($workflowDir) && !mkdir($workflowDir, 0755, true)) {
+                throw new \RuntimeException('could not create ' . $workflowDir);
+            }
+            if (copy($source, $workflow) === false) {
+                throw new \RuntimeException('could not sync caller workflow to ' . $workflow);
+            }
+            echo 'synced caller workflow' . "\n";
         }
-        if (!symlink($target, $link)) {
-            throw new \RuntimeException('could not create skill link at ' . $link);
-        }
-        if (!is_dir($link)) {
-            throw new \RuntimeException('skill link target does not resolve: ' . $target . ' (run composer install first)');
-        }
-        echo 'installed skill link' . "\n";
+
         return 0;
     }
 
@@ -138,6 +173,16 @@ final class Application
             echo 'ok: skill link' . "\n";
         }
 
+        $workflow = self::callerWorkflow($root);
+        if (!file_exists($workflow)) {
+            echo 'ok: caller workflow not present (skipped)' . "\n";
+        } elseif (self::filesIdentical($workflow, self::callerWorkflowTemplate())) {
+            echo 'ok: caller workflow' . "\n";
+        } else {
+            echo 'FAIL: caller workflow differs from the installed package (run qa link and commit)' . "\n";
+            $failed = 1;
+        }
+
         return $failed;
     }
 
@@ -156,6 +201,7 @@ final class Application
             'docker setup' => 'Resources/Testing/Docker/',
             'git hooks' => 'Resources/GitHooks/',
             'psbits-qa skill' => 'Resources/Skill/psbits-qa/',
+            'caller workflow template' => 'Resources/CI/ci.yml',
         ] as $label => $path) {
             printf("  %-24s %s\n", $label . ':', $root . '/' . $path);
         }

@@ -61,3 +61,12 @@ jobs:
           php -l src/Console/Application.php
           php -l Resources/Testing/renderPhpunitXml.php
           for fixer in src/PhpCsFixer/Fixer/*.php; do php -l "$fixer"; done
+
+      - name: Validate workflow YAML
+        # extension-ci.yml is the single source of truth for every
+        # extension pipeline - a syntax break there would turn all of
+        # them red, so the workflow files are parse-checked here.
+        run: |
+          for f in .github/workflows/*.yml; do
+            python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"
+          done

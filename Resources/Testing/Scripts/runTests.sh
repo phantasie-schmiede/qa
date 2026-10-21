@@ -14,6 +14,11 @@
 #                    (--prefer-lowest --prefer-stable).
 #   --db             Database for the functional suite (default: sqlite).
 #
+# Suites are rendered and run when their Tests directory exists (same
+# convention as runCoverage.sh): unit-only repositories (no
+# Tests/Functional) run unchanged, and a repository without any Tests
+# directory fails with an error.
+#
 # Tracked files are never modified. The core pin and the removal of
 # saschaegerer/phpstan-typo3 (which hard-pins typo3/cms-core and cannot
 # coexist with the matrix legs) are applied to a generated composer-matrix.json
@@ -234,21 +239,49 @@ case "$DB" in
 esac
 
 # ---------------------------------------------------------------------------
+# Suite detection.
+# Rendered and run when the Tests directory exists, so unit-only
+# repositories (no Tests/Functional) run unchanged - same convention as
+# runCoverage.sh.
+# ---------------------------------------------------------------------------
+HAS_UNIT=''
+HAS_FUNCTIONAL=''
+if [ -d Tests/Unit ]; then
+    HAS_UNIT=1
+fi
+if [ -d Tests/Functional ]; then
+    HAS_FUNCTIONAL=1
+fi
+
+if [ -z "$HAS_UNIT" ] && [ -z "$HAS_FUNCTIONAL" ]; then
+    echo "error: no Tests/Unit or Tests/Functional in $REPO_ROOT; nothing to test" >&2
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Step 3/4 - unit suite.
 # memory_limit=1G: the functional suite boots a full TYPO3 14 instance per
 # test, whose TcaSchemaFactory var_exports the complete TCA into the cache.
 # The 128 MB default of the php-cli images (esp. on mysql/postgres) is
 # exhausted there - same setting as runCoverage.sh.
 # ---------------------------------------------------------------------------
-banner "step 3/4 — unit tests"
-# The phpunit configuration is generated into .Build/ (git-ignored) with
-# absolute paths; the renderer skips a suite when its Tests directory is
-# absent.
-php "$SCRIPT_DIR/../renderPhpunitXml.php" all
-php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/UnitTests.xml
+if [ -n "$HAS_UNIT" ]; then
+    banner "step 3/4 — unit tests"
+    # The phpunit configuration is generated into .Build/ (git-ignored) with
+    # absolute paths.
+    php "$SCRIPT_DIR/../renderPhpunitXml.php" unit
+    php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/UnitTests.xml
+else
+    banner "step 3/4 — unit tests (skipped: no Tests/Unit)"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 4/4 - functional suite.
 # ---------------------------------------------------------------------------
-banner "step 4/4 — functional tests (${DB})"
-php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/FunctionalTests.xml
+if [ -n "$HAS_FUNCTIONAL" ]; then
+    banner "step 4/4 — functional tests (${DB})"
+    php "$SCRIPT_DIR/../renderPhpunitXml.php" functional
+    php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/FunctionalTests.xml
+else
+    banner "step 4/4 — functional tests (${DB}) (skipped: no Tests/Functional)"
+fi

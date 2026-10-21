@@ -62,6 +62,37 @@ final class ApplicationTest extends TestCase
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
 
+    public function testLinkSyncsCallerWorkflowWhenPresent(): void
+    {
+        chdir($this->root);
+        $workflow = $this->root . '/.github/workflows/ci.yml';
+        mkdir(dirname($workflow), 0755, true);
+        file_put_contents($workflow, "name: CI\n# stale\n");
+        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
+        self::assertSame(0, Application::execute(['qa', 'check']));
+    }
+
+    public function testLinkLeavesMissingCallerWorkflowAlone(): void
+    {
+        chdir($this->root);
+        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertFileDoesNotExist($this->root . '/.github/workflows/ci.yml');
+        self::assertSame(0, Application::execute(['qa', 'check']));
+    }
+
+    public function testCheckFailsOnTamperedCallerWorkflow(): void
+    {
+        chdir($this->root);
+        $workflow = $this->root . '/.github/workflows/ci.yml';
+        mkdir(dirname($workflow), 0755, true);
+        file_put_contents($workflow, "name: CI\n# stale\n");
+        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
+        file_put_contents($workflow, "name: CI\n# drifted\n");
+        self::assertSame(1, Application::execute(['qa', 'check']));
+    }
+
     private function removeTree(string $path): void
     {
         if (!is_dir($path)) {

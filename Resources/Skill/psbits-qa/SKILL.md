@@ -32,19 +32,29 @@ The QA tooling lives in the `psbits/qa` package (installed into
 - Docker setup: `.Build/vendor/psbits/qa/Resources/Testing/Docker/`
 - PHPUnit XMLs are **generated** into `.Build/phpunit/` (git-ignored) before
   every test run by `renderPhpunitXml.php`; no XML is committed to the repo
-- The skill file you are reading and the git pre-commit hook are installed by
-  `bin/qa link` (composer post-install/update hook); `bin/qa check` verifies
-  both (CI gate)
+- The skill file you are reading, the git pre-commit hook and the caller CI
+  workflow (`.github/workflows/ci.yml`) are installed/synced by `bin/qa link`
+  (composer post-install/update hook); `bin/qa check` verifies all three
+  (CI gate, run by the shared qa job)
+- The caller CI workflow is a template-managed file: it invokes the shared
+  test-matrix workflow `phantasie-schmiede/qa/.github/workflows/extension-ci.yml`
+  (single source of truth for the whole CI - fix it there, not per repo)
 - Run `bin/qa paths` to list the shared resource locations
 - Upgrade the tooling with `composer update psbits/qa`
 
 ## Test matrix (repos with `test:local` / `test:docker`)
 
-`acl-deployment`, `debug`, `foundation`, `security` and `view-helpers` carry the full matrix
-infrastructure; `crafter` only carries `runCoverage.sh`:
+The GitHub CI of the extension repositories is the shared workflow
+`extension-ci.yml` in the psbits/qa repository (called by the
+template-managed `.github/workflows/ci.yml`); locally the same scripts run
+directly:
 
 - `sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runTests.sh <core>` - resolves the
-  core via composer and runs unit + functional tests (e.g. `13.4`, `14.3`)
+  core via composer and runs the suites that exist (e.g. `13.4`, `14.3`)
+- Suite detection: a suite runs when its `Tests/<Suite>` directory exists
+  (same convention in `runCoverage.sh`). Unit-only repositories (no
+  `Tests/Functional`) run unchanged; in the CI the MariaDB/PostgreSQL legs
+  are skipped for them entirely
 - `runLocalTests.sh` - local PHP with docker databases, `runDockerTests.sh` - everything in
   containers, `buildTestImages.sh` - builds the test images
   (`psbits/<extension>-test:<php>`)

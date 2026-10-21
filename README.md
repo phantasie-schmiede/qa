@@ -12,6 +12,9 @@ holds the single source of truth for:
   typoscript-lint, lint-class-attributes)
 - the `psbits-qa` skill and the git pre-commit hook - `Resources/Skill/`,
   `Resources/GitHooks/`, installed by `bin/qa link`
+- the shared GitHub CI workflow (`extension-ci.yml` in this repository's
+  `.github/workflows/`) and its caller template - `Resources/CI/ci.yml`,
+  kept in sync with the repositories by `bin/qa link` / `bin/qa check`
 
 ## Usage in an extension
 
@@ -33,6 +36,27 @@ holds the single source of truth for:
 }
 ```
 
+### Caller CI workflow
+
+The extension repository keeps only a thin caller workflow
+(`.github/workflows/ci.yml`) that invokes the shared test-matrix workflow of
+this repository:
+
+```yaml
+jobs:
+  ci:
+    uses: phantasie-schmiede/qa/.github/workflows/extension-ci.yml@main
+    secrets: inherit
+```
+
+Adopt it by copying `Resources/CI/ci.yml` from this package into
+`.github/workflows/ci.yml` once; from then on `bin/qa link`
+(composer post-install/update) keeps the file in sync with the template and
+`bin/qa check` (run by the CI qa job) fails on drift. Repositories without
+`Tests/Functional` run unit-only: the functional suite is skipped by
+`runTests.sh`/`runCoverage.sh` and the database legs (MariaDB/PostgreSQL)
+are skipped entirely by the shared workflow.
+
 The extension keeps only its repo-specific QA files:
 `Build/Quality/phpstan.neon.dist` (thin shim over the package baseline),
 `Build/Quality/coverage-baseline.json` and `Build/Quality/.prettierignore`
@@ -51,7 +75,9 @@ the repository directory name).
 ## CLI
 
 ```
-bin/qa link    install git hook + skill symlink (idempotent)
-bin/qa check   verify hook and skill link (CI gate, exits non-zero on drift)
+bin/qa link    install git hook + skill symlink and sync the caller CI
+               workflow when present (idempotent)
+bin/qa check   verify hook, skill link and caller CI workflow (CI gate,
+               exits non-zero on drift)
 bin/qa paths   print the shared resource locations
 ```
