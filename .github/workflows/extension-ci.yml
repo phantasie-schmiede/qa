@@ -112,18 +112,30 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - name: Resolve QA ref
+        # psbits/qa is consumed from its main branch (dev-main), so the cache
+        # key carries the current main commit: a new qa release misses the
+        # cache and the bootstrap installs the fresh package.
+        id: qa-ref
+        run: |
+          echo "qa-head=$(git ls-remote https://github.com/phantasie-schmiede/qa main | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: |
             .Build/vendor
             .Build/bin
-          key: vendor-${{ runner.os }}-t3${{ matrix.typo3 }}-p${{ matrix.php }}-${{ matrix.lowest }}-${{ hashFiles('composer.json') }}
+            # Staged by runTests.sh for the shared path repository; must
+            # survive the cache restore, or the vendor symlink dangles and
+            # every run pays a full rebuild.
+            .Build/qa-src
+          key: vendor-${{ runner.os }}-t3${{ matrix.typo3 }}-p${{ matrix.php }}-${{ matrix.lowest }}-${{ steps.qa-ref.outputs.qa-head }}-${{ hashFiles('composer.json') }}
           # No catch-all key: 13.4 and 14.3 carry different class-alias-loader
           # majors (1.x/2.x) and runTests.sh only reuses a vendor dir whose
           # core major matches (see its header).
           restore-keys: |
-            vendor-${{ runner.os }}-t3${{ matrix.typo3 }}-p${{ matrix.php }}-${{ matrix.lowest }}-
+            vendor-${{ runner.os }}-t3${{ matrix.typo3 }}-p${{ matrix.php }}-${{ matrix.lowest }}-${{ steps.qa-ref.outputs.qa-head }}-
 
       - name: Install dependencies
         # runTests.sh lives in psbits/qa, so the package must be installed
@@ -146,9 +158,10 @@ jobs:
       - name: Run test matrix
         # Builds the environment and runs both suites in one place, shared
         # with the local composer test:local alias. The script pins the
-        # core and drops saschaegerer/phpstan-typo3 (it hard-pins
-        # typo3/cms-core to ^13.4.3 and only the qa job needs it) in a
-        # generated composer-matrix.json, so tracked files stay unmodified,
+        # core and drops saschaegerer/phpstan-typo3 (each of its majors
+        # hard-pins typo3/cms-core to a single core major and only the
+        # qa jobs need it) in a generated composer-matrix.json, so tracked
+        # files stay unmodified,
         # and exports COMPOSER_NO_SECURITY_BLOCKING (every supported core
         # major currently carries an open Packagist advisory; reporting
         # happens in the qa job). Suites without a Tests directory are
@@ -209,15 +222,23 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - name: Resolve QA ref
+        # See the tests job.
+        id: qa-ref
+        run: |
+          echo "qa-head=$(git ls-remote https://github.com/phantasie-schmiede/qa main | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: |
             .Build/vendor
             .Build/bin
-          key: vendor-${{ runner.os }}-mariadb-t3${{ matrix.typo3 }}-${{ hashFiles('composer.json') }}
+            # See the tests job.
+            .Build/qa-src
+          key: vendor-${{ runner.os }}-mariadb-t3${{ matrix.typo3 }}-${{ steps.qa-ref.outputs.qa-head }}-${{ hashFiles('composer.json') }}
           restore-keys: |
-            vendor-${{ runner.os }}-mariadb-t3${{ matrix.typo3 }}-
+            vendor-${{ runner.os }}-mariadb-t3${{ matrix.typo3 }}-${{ steps.qa-ref.outputs.qa-head }}-
 
       - name: Install dependencies
         # See the tests job: the script has to exist before it can run.
@@ -294,15 +315,23 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      - name: Resolve QA ref
+        # See the tests job.
+        id: qa-ref
+        run: |
+          echo "qa-head=$(git ls-remote https://github.com/phantasie-schmiede/qa main | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: |
             .Build/vendor
             .Build/bin
-          key: vendor-${{ runner.os }}-postgres-t3${{ matrix.typo3 }}-${{ hashFiles('composer.json') }}
+            # See the tests job.
+            .Build/qa-src
+          key: vendor-${{ runner.os }}-postgres-t3${{ matrix.typo3 }}-${{ steps.qa-ref.outputs.qa-head }}-${{ hashFiles('composer.json') }}
           restore-keys: |
-            vendor-${{ runner.os }}-postgres-t3${{ matrix.typo3 }}-
+            vendor-${{ runner.os }}-postgres-t3${{ matrix.typo3 }}-${{ steps.qa-ref.outputs.qa-head }}-
 
       - name: Install dependencies
         # See the tests job: the script has to exist before it can run.
@@ -345,15 +374,21 @@ jobs:
           coverage: pcov
           tools: composer:v2
 
+      - name: Resolve QA ref
+        # See the tests job.
+        id: qa-ref
+        run: |
+          echo "qa-head=$(git ls-remote https://github.com/phantasie-schmiede/qa main | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: |
             .Build/vendor
             .Build/bin
-          key: vendor-${{ runner.os }}-coverage-t313.4-p8.4-${{ hashFiles('composer.json') }}
+          key: vendor-${{ runner.os }}-coverage-t313.4-p8.4-${{ steps.qa-ref.outputs.qa-head }}-${{ hashFiles('composer.json') }}
           restore-keys: |
-            vendor-${{ runner.os }}-coverage-
+            vendor-${{ runner.os }}-coverage-t313.4-p8.4-${{ steps.qa-ref.outputs.qa-head }}-
 
       - name: Install dependencies
         # Same approach as the qa job: composer.lock is git-ignored, so the
@@ -410,15 +445,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Resolve QA ref
+        # See the tests job - the qa jobs install psbits/qa from Packagist
+        # too, so a qa release must miss the cache there as well.
+        id: qa-ref
+        run: |
+          echo "qa-head=$(git ls-remote https://github.com/phantasie-schmiede/qa main | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: |
             .Build/vendor
             .Build/bin
-          key: vendor-${{ runner.os }}-qa-t313.4-${{ hashFiles('composer.json') }}
+          key: vendor-${{ runner.os }}-qa-t313.4-${{ steps.qa-ref.outputs.qa-head }}-${{ hashFiles('composer.json') }}
           restore-keys: |
-            vendor-${{ runner.os }}-qa-t313.4-
+            vendor-${{ runner.os }}-qa-t313.4-${{ steps.qa-ref.outputs.qa-head }}-
 
       - name: Install dependencies
         # Pinned on purpose: saschaegerer/phpstan-typo3 only ever supports one core
@@ -497,15 +539,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+      - name: Resolve QA ref
+        # See the tests job - the qa jobs install psbits/qa from Packagist
+        # too, so a qa release must miss the cache there as well.
+        id: qa-ref
+        run: |
+          echo "qa-head=$(git ls-remote https://github.com/phantasie-schmiede/qa main | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
       - name: Cache Composer
         uses: actions/cache@v4
         with:
           path: |
             .Build/vendor
             .Build/bin
-          key: vendor-${{ runner.os }}-qa-t314.3-${{ hashFiles('composer.json') }}
+          key: vendor-${{ runner.os }}-qa-t314.3-${{ steps.qa-ref.outputs.qa-head }}-${{ hashFiles('composer.json') }}
           restore-keys: |
-            vendor-${{ runner.os }}-qa-t314.3-
+            vendor-${{ runner.os }}-qa-t314.3-${{ steps.qa-ref.outputs.qa-head }}-
 
       - name: Install dependencies
         # Pinned on purpose: see qa-v13 - one job per core major.
