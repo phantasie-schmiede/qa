@@ -645,14 +645,23 @@ jobs:
           fetch-depth: 0
 
       - name: Check tag pattern
+        # A pre-release suffix (for example -alpha or -rc.1) is optional: it
+        # makes the tag a valid composer pre-release for Packagist consumers,
+        # while the extension version published to TER stays the semver base.
         run: |
-          if ! [[ "${GITHUB_REF}" =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Not a semver tag, aborting." >&2
+          if ! [[ "${GITHUB_REF}" =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Not a semver tag (optionally with a pre-release suffix), aborting." >&2
             exit 1
           fi
 
       - name: Get version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+        # The extension version published to TER and compared against
+        # ext_emconf.php is the semver base without the pre-release suffix.
+        # The full tag name is kept to read the tag message below.
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          echo "full_tag=${tag}" >> "$GITHUB_ENV"
+          echo "version=${tag%%-*}" >> "$GITHUB_ENV"
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -675,7 +684,7 @@ jobs:
 
       - name: Get tag description (TER comment)
         run: |
-          comment="$(git tag -l "$version" --format '%(contents)')"
+          comment="$(git tag -l "$full_tag" --format '%(contents)')"
           if [[ -z "${comment// }" ]]; then
             echo "comment=Released version $version" >> "$GITHUB_ENV"
           else
