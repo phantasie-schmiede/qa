@@ -644,24 +644,22 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Check tag pattern
-        # A pre-release suffix (for example -alpha or -rc.1) is optional: it
-        # makes the tag a valid composer pre-release for Packagist consumers,
-        # while the extension version published to TER stays the semver base.
-        run: |
-          if ! [[ "${GITHUB_REF}" =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Not a semver tag (optionally with a pre-release suffix), aborting." >&2
-            exit 1
-          fi
+      - name: Checkout shared tooling
+        uses: actions/checkout@v4
+        with:
+          repository: phantasie-schmiede/qa
+          ref: main
+          path: tools/qa
+          fetch-depth: 1
 
-      - name: Get version
-        # The extension version published to TER and compared against
-        # ext_emconf.php is the semver base without the pre-release suffix.
-        # The full tag name is kept to read the tag message below.
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          echo "full_tag=${tag}" >> "$GITHUB_ENV"
-          echo "version=${tag%%-*}" >> "$GITHUB_ENV"
+      - name: Check tag pattern
+        # Validates the tag and exports the full tag name plus the extension
+        # version (semver base) published to TER. A pre-release suffix (for
+        # example -alpha or -rc.1) is allowed and stripped: it makes the tag
+        # a valid composer pre-release for Packagist consumers, while TER
+        # keeps using the version state from ext_emconf.php. The logic and
+        # its test cases live in the phantasie-schmiede/qa repository.
+        run: sh tools/qa/Resources/Testing/Scripts/checkReleaseTag.sh "${GITHUB_REF}" >> "$GITHUB_ENV"
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2

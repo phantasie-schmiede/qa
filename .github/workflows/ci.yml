@@ -62,6 +62,9 @@ jobs:
           php -l Resources/Testing/renderPhpunitXml.php
           for fixer in src/PhpCsFixer/Fixer/*.php; do php -l "$fixer"; done
 
+      - name: Run script tests
+        run: sh Resources/Testing/Scripts/checkReleaseTagTest.sh
+
       - name: Validate workflow YAML
         # extension-ci.yml is the single source of truth for every
         # extension pipeline - a syntax break there would turn all of
