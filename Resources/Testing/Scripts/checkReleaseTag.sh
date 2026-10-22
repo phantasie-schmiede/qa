@@ -55,6 +55,7 @@ base="${tag%%-*}"
 # The version base is three dot-separated numeric parts.
 set -f
 IFS='.'
+# shellcheck disable=SC2086  # intentional: split the version base on dots
 set -- $base
 set +f
 IFS=' '
@@ -65,8 +66,9 @@ case "$base" in
         ;;
 esac
 
-[ "$#" -eq 3 ] || fail "$ref"
-is_digits "$1" && is_digits "$2" && is_digits "$3" || fail "$ref"
+if [ "$#" -ne 3 ] || ! is_digits "$1" || ! is_digits "$2" || ! is_digits "$3"; then
+    fail "$ref"
+fi
 
 # An optional pre-release suffix: a dash followed by one or more
 # characters from [0-9A-Za-z.-].
