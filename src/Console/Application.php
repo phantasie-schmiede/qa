@@ -9,8 +9,8 @@ final class Application
     private const USAGE = <<<text
     Usage:
       qa link   Install the git pre-commit hook and the psbits-qa skill
-                symlink, and sync the caller CI workflow (.github/workflows/ci.yml)
-                when present
+                symlink, and create or sync the caller CI workflow
+                (.github/workflows/ci.yml)
       qa check  Verify hook, skill link and caller CI workflow match the
                 installed package (CI gate)
       qa paths  Print the locations of the shared QA resources
@@ -123,14 +123,13 @@ final class Application
             echo 'installed skill link' . "\n";
         }
 
-        // Only manage the caller workflow when it is present: a repository
-        // without a ci.yml has no shared CI, and composer must not enable
-        // it behind the repository's back.
+        // The caller workflow is created on first run and kept in sync with
+        // the template from then on, so every repository opts into the
+        // shared CI with the next composer install.
         $workflow = self::callerWorkflow($root);
-        $source = self::callerWorkflowTemplate();
-        if (!file_exists($workflow)) {
-            echo 'caller workflow not present (skipped)' . "\n";
-        } elseif (self::filesIdentical($workflow, $source)) {
+        $source   = self::callerWorkflowTemplate();
+        $existed  = file_exists($workflow);
+        if (self::filesIdentical($workflow, $source)) {
             echo 'caller workflow unchanged' . "\n";
         } else {
             $workflowDir = dirname($workflow);
@@ -140,7 +139,7 @@ final class Application
             if (copy($source, $workflow) === false) {
                 throw new \RuntimeException('could not sync caller workflow to ' . $workflow);
             }
-            echo 'synced caller workflow' . "\n";
+            echo $existed ? 'synced caller workflow' : 'installed caller workflow' . "\n";
         }
 
         return 0;

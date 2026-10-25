@@ -73,11 +73,11 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
-    public function testLinkLeavesMissingCallerWorkflowAlone(): void
+    public function testLinkInstallsMissingCallerWorkflow(): void
     {
         chdir($this->root);
         self::assertSame(0, Application::execute(['qa', 'link']));
-        self::assertFileDoesNotExist($this->root . '/.github/workflows/ci.yml');
+        self::assertFileEquals($this->root . '/.github/workflows/ci.yml', __DIR__ . '/../../Resources/CI/ci.yml');
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 

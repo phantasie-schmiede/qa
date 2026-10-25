@@ -77,8 +77,8 @@ the repository directory name).
 ## CLI
 
 ```
-bin/qa link    install git hook + skill symlink and sync the caller CI
-               workflow when present (idempotent)
+bin/qa link    install git hook + skill symlink and create or sync the
+               caller CI workflow (idempotent)
 bin/qa check   verify hook, skill link and caller CI workflow (CI gate,
                exits non-zero on drift)
 bin/qa paths   print the shared resource locations
