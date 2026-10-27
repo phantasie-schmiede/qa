@@ -8,7 +8,9 @@
         "friendsofphp/php-cs-fixer": "^3.95"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11"
+        "phpunit/phpunit": "^11",
+        "typo3/cms-core": "^13.4 || ^14.3",
+        "typo3/testing-framework": "^9.5"
     },
     "autoload": {
         "psr-4": {
@@ -22,6 +24,10 @@
         "test": "phpunit -c tests/phpunit.xml.dist"
     },
     "config": {
+        "allow-plugins": {
+            "typo3/class-alias-loader": true,
+            "typo3/cms-composer-installers": true
+        },
         "sort-packages": true
     }
 }
