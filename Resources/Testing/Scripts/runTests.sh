@@ -24,12 +24,9 @@
 # coexist with the matrix legs) are applied to a generated composer-matrix.json
 # that composer addresses through the COMPOSER environment variable.
 #
-# The shared psbits/qa package is resolved from a path repository in the
-# matrix environment: the materialized copy is staged into .Build/qa-src
-# (outside the vendor wipe) and the vcs entry is dropped. Resolving it from
-# GitHub instead would hit the unauthenticated api.github.com rate limit
-# (composer's vcs driver queries it for branches) and fall back to an SSH
-# clone, which the containers and CI hosts have no credentials for.
+# The shared psbits/qa package is resolved like any other dependency
+# (from Packagist or a consumer-declared repository). Drift of its dev
+# branch between legs is accepted, same as for any other dev dependency.
 #
 # composer-matrix.lock is wiped before every run. .Build/vendor is only
 # wiped when it was built for a different core major: core 13.4 requires
@@ -126,37 +123,6 @@ export COMPOSER=composer-matrix.json
 export COMPOSER_NO_SECURITY_BLOCKING=1
 
 cp composer.json composer-matrix.json
-
-# Composer installs the path repository as a symlink into .Build/qa-src, so
-# a leg following a previous leg must not wipe the staging it is pointing
-# at - a fresh staging is only taken from the installed package otherwise.
-if [ -L .Build/vendor/psbits/qa ] && [ -d .Build/qa-src ]; then
-    :
-elif [ -d .Build/vendor/psbits/qa ]; then
-    rm -rf .Build/qa-src
-    cp -R "$(readlink -f .Build/vendor/psbits/qa)" .Build/qa-src
-else
-    echo "error: psbits/qa is not installed in .Build; run composer update in the repository first" >&2
-    exit 1
-fi
-
-if [ -d .Build/qa-src ]; then
-    # shellcheck disable=SC2016  # intentional: the $variables are expanded by PHP, not the shell
-    php -r '
-        $file = "composer-matrix.json";
-        $data = json_decode(file_get_contents($file), true);
-        $repos = [["type" => "path", "url" => ".Build/qa-src"]];
-        foreach ($data["repositories"] ?? [] as $repo) {
-            $url = $repo["url"] ?? "";
-            if (str_contains($url, "phantasie-schmiede/qa.git") || str_contains($url, "psbits/qa.git")) {
-                continue;
-            }
-            $repos[] = $repo;
-        }
-        $data["repositories"] = $repos;
-        file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-    '
-fi
 
 if grep -q '"saschaegerer/phpstan-typo3"' composer.json; then
     composer remove --dev --no-update --no-interaction saschaegerer/phpstan-typo3
