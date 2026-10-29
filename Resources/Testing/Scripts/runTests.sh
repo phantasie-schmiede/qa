@@ -24,10 +24,6 @@
 # coexist with the matrix legs) are applied to a generated composer-matrix.json
 # that composer addresses through the COMPOSER environment variable.
 #
-# The shared psbits/qa package is resolved like any other dependency
-# (from Packagist or a consumer-declared repository). Drift of its dev
-# branch between legs is accepted, same as for any other dev dependency.
-#
 # composer-matrix.lock is wiped before every run. .Build/vendor is only
 # wiped when it was built for a different core major: core 13.4 requires
 # typo3/class-alias-loader ^1.2 and core 14.3 requires ^2.0.1, and
