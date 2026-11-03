@@ -4,14 +4,27 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Console;
 
+/**
+ * Class Application
+ *
+ * @package PSBits\Qa\Console
+ */
 final class Application
 {
-    private const USAGE = <<<text
+    /** @var string[] shared skills installed as symlinks by qa link */
+    private const array SKILLS = [
+        'psbits-qa',
+        'psbits-foundation',
+        'psbits-v14-compat',
+    ];
+
+    private const string USAGE = <<<text
     Usage:
-      qa link   Install the git pre-commit hook and the psbits-qa skill
-                symlink, and create or sync the caller CI workflow
+      qa link   Install the git pre-commit hook and the shared skill
+                symlinks (psbits-qa, psbits-foundation, psbits-v14-compat),
+                and create or sync the caller CI workflow
                 (.github/workflows/ci.yml)
-      qa check  Verify hook, skill link and caller CI workflow match the
+      qa check  Verify hook, skill links and caller CI workflow match the
                 installed package (CI gate)
       qa paths  Print the locations of the shared QA resources
 
@@ -59,17 +72,27 @@ final class Application
         if (!is_dir($root) || !file_exists($root . '/composer.json')) {
             throw new \RuntimeException('repository root with a composer.json not found at ' . $root);
         }
+
         return $root;
     }
 
-    private static function skillLink(string $root): string
+    /**
+     * @return array<string, string>
+     */
+    private static function skillLinks(string $root): array
     {
-        return $root . '/.opencode/skills/psbits-qa';
+        $links = [];
+
+        foreach (self::SKILLS as $skill) {
+            $links[$skill] = $root . '/.opencode/skills/' . $skill;
+        }
+
+        return $links;
     }
 
-    private static function skillTarget(): string
+    private static function skillTarget(string $skill): string
     {
-        return '../../.Build/vendor/psbits/qa/Resources/Skill/psbits-qa';
+        return '../../.Build/vendor/psbits/qa/Resources/Skill/' . $skill;
     }
 
     private static function callerWorkflow(string $root): string
@@ -85,42 +108,53 @@ final class Application
     private static function link(string $root): int
     {
         $hooks = $root . '/.git/hooks';
+
         if (!is_dir($hooks) && !mkdir($hooks, 0755, true)) {
             throw new \RuntimeException('could not create ' . $hooks);
         }
+
         $hook = $hooks . '/pre-commit';
         $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
+
         if (!self::filesIdentical($hook, $source)) {
             if (copy($source, $hook) === false || !chmod($hook, 0755)) {
                 throw new \RuntimeException('could not install pre-commit hook to ' . $hook);
             }
+
             echo "installed pre-commit hook\n";
         } else {
             echo "pre-commit hook unchanged\n";
         }
 
-        $link = self::skillLink($root);
-        $target = self::skillTarget();
-        $linkOk = is_link($link) && readlink($link) === $target && is_dir($link);
-        if ($linkOk) {
-            echo 'skill link unchanged' . "\n";
-        } else {
-            if (is_link($link)) {
-                unlink($link);
-            } elseif (file_exists($link)) {
-                self::remove($link);
+        foreach (self::skillLinks($root) as $skill => $link) {
+            $target = self::skillTarget($skill);
+            $linkOk = is_link($link) && readlink($link) === $target && is_dir($link);
+
+            if ($linkOk) {
+                echo "skill link unchanged: {$skill}\n";
+            } else {
+                if (is_link($link)) {
+                    unlink($link);
+                } elseif (file_exists($link)) {
+                    self::remove($link);
+                }
+
+                $linkDir = dirname($link);
+
+                if (!is_dir($linkDir) && !mkdir($linkDir, 0755, true)) {
+                    throw new \RuntimeException('could not create ' . $linkDir);
+                }
+
+                if (!symlink($target, $link)) {
+                    throw new \RuntimeException('could not create skill link at ' . $link);
+                }
+
+                if (!is_dir($link)) {
+                    throw new \RuntimeException('skill link target does not resolve: ' . $target . ' (run composer install first)');
+                }
+
+                echo "installed skill link: {$skill}\n";
             }
-            $linkDir = dirname($link);
-            if (!is_dir($linkDir) && !mkdir($linkDir, 0755, true)) {
-                throw new \RuntimeException('could not create ' . $linkDir);
-            }
-            if (!symlink($target, $link)) {
-                throw new \RuntimeException('could not create skill link at ' . $link);
-            }
-            if (!is_dir($link)) {
-                throw new \RuntimeException('skill link target does not resolve: ' . $target . ' (run composer install first)');
-            }
-            echo 'installed skill link' . "\n";
         }
 
         // The caller workflow is created on first run and kept in sync with
@@ -129,16 +163,20 @@ final class Application
         $workflow = self::callerWorkflow($root);
         $source   = self::callerWorkflowTemplate();
         $existed  = file_exists($workflow);
+
         if (self::filesIdentical($workflow, $source)) {
             echo 'caller workflow unchanged' . "\n";
         } else {
             $workflowDir = dirname($workflow);
+
             if (!is_dir($workflowDir) && !mkdir($workflowDir, 0755, true)) {
                 throw new \RuntimeException('could not create ' . $workflowDir);
             }
+
             if (copy($source, $workflow) === false) {
                 throw new \RuntimeException('could not sync caller workflow to ' . $workflow);
             }
+
             echo $existed ? 'synced caller workflow' : 'installed caller workflow' . "\n";
         }
 
@@ -151,6 +189,7 @@ final class Application
 
         $hook = $root . '/.git/hooks/pre-commit';
         $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
+
         if (self::filesIdentical($hook, $source)) {
             echo 'ok: pre-commit hook' . "\n";
         } else {
@@ -158,18 +197,19 @@ final class Application
             $failed = 1;
         }
 
-        $link = self::skillLink($root);
-        if (!is_link($link)) {
-            echo 'FAIL: skill link missing at ' . $link . "\n";
-            $failed = 1;
-        } elseif (readlink($link) !== self::skillTarget()) {
-            echo 'FAIL: skill link points to ' . readlink($link) . "\n";
-            $failed = 1;
-        } elseif (!is_file($link . '/SKILL.md')) {
-            echo 'FAIL: skill link does not resolve (is .Build/vendor installed?)' . "\n";
-            $failed = 1;
-        } else {
-            echo 'ok: skill link' . "\n";
+        foreach (self::skillLinks($root) as $skill => $link) {
+            if (!is_link($link)) {
+                echo "FAIL: skill link missing at {$link} ({$skill})\n";
+                $failed = 1;
+            } elseif (readlink($link) !== self::skillTarget($skill)) {
+                echo "FAIL: skill link {$skill} points to " . readlink($link) . "\n";
+                $failed = 1;
+            } elseif (!is_file($link . '/SKILL.md')) {
+                echo "FAIL: skill link {$skill} does not resolve (is .Build/vendor installed?)\n";
+                $failed = 1;
+            } else {
+                echo "ok: skill link {$skill}\n";
+            }
         }
 
         $workflow = self::callerWorkflow($root);
@@ -200,6 +240,8 @@ final class Application
             'docker setup' => 'Resources/Testing/Docker/',
             'git hooks' => 'Resources/GitHooks/',
             'psbits-qa skill' => 'Resources/Skill/psbits-qa/',
+            'psbits-foundation skill' => 'Resources/Skill/psbits-foundation/',
+            'psbits-v14-compat skill' => 'Resources/Skill/psbits-v14-compat/',
             'caller workflow template' => 'Resources/CI/ci.yml',
         ] as $label => $path) {
             printf("  %-24s %s\n", $label . ':', $root . '/' . $path);

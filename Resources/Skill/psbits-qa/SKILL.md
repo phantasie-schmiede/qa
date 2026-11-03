@@ -32,9 +32,10 @@ The QA tooling lives in the `psbits/qa` package (installed into
 - Docker setup: `.Build/vendor/psbits/qa/Resources/Testing/Docker/`
 - PHPUnit XMLs are **generated** into `.Build/phpunit/` (git-ignored) before
   every test run by `renderPhpunitXml.php`; no XML is committed to the repo
-- The skill file you are reading, the git pre-commit hook and the caller CI
-  workflow (`.github/workflows/ci.yml`) are installed/synced by `bin/qa link`
-  (composer post-install/update hook); `bin/qa check` verifies all three
+- The skill files you are reading (this one, `psbits-foundation` and
+  `psbits-v14-compat`), the git pre-commit hook and the caller CI workflow
+  (`.github/workflows/ci.yml`) are installed/synced by `bin/qa link`
+  (composer post-install/update hook); `bin/qa check` verifies all of them
   (CI gate, run by the shared qa job)
 - The caller CI workflow is a template-managed file: it invokes the shared
   test-matrix workflow `phantasie-schmiede/qa/.github/workflows/extension-ci.yml`
@@ -99,7 +100,9 @@ Only these QA files remain in the repository (everything else is shared):
   `paths` / `excludePaths` / `ignoreErrors` / the phpstan-typo3 extension include
 - `Build/Quality/coverage-baseline.json` - per-repo coverage baseline
 - `Build/Quality/.prettierignore` - where prettier is used (repo-relative ignore list)
-- `.opencode/skills/psbits-qa` - symlink into the package (created by `bin/qa link`)
+- `.opencode/skills/psbits-qa`, `.opencode/skills/psbits-foundation` and
+  `.opencode/skills/psbits-v14-compat` - symlinks into the package (created by
+  `bin/qa link`)
 
 ## Environment notes
 

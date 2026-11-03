@@ -10,8 +10,9 @@ holds the single source of truth for:
 - linter and fixer configuration - `Resources/Quality/` (php-cs-fixer incl. the
   shared `PSBits/*` custom fixers, PHPStan baseline, prettier, yamllint,
   typoscript-lint, lint-class-attributes)
-- the `psbits-qa` skill and the git pre-commit hook - `Resources/Skill/`,
-  `Resources/GitHooks/`, installed by `bin/qa link`
+- the shared skills (`psbits-qa`, `psbits-foundation`, `psbits-v14-compat`) and
+  the git pre-commit hook - `Resources/Skill/`, `Resources/GitHooks/`, installed
+  by `bin/qa link`
 - the shared GitHub CI workflow (`extension-ci.yml` in this repository's
   `.github/workflows/`) and its caller template - `Resources/CI/ci.yml`,
   kept in sync with the repositories by `bin/qa link` / `bin/qa check`
@@ -77,9 +78,9 @@ the repository directory name).
 ## CLI
 
 ```
-bin/qa link    install git hook + skill symlink and create or sync the
+bin/qa link    install git hook + skill symlinks and create or sync the
                caller CI workflow (idempotent)
-bin/qa check   verify hook, skill link and caller CI workflow (CI gate,
+bin/qa check   verify hook, skill links and caller CI workflow (CI gate,
                exits non-zero on drift)
 bin/qa paths   print the shared resource locations
 ```
