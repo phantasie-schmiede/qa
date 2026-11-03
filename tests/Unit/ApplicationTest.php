@@ -12,8 +12,11 @@ final class ApplicationTest extends TestCase
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/psbits-qa-app-' . bin2hex(random_bytes(6));
-        mkdir($this->root . '/.Build/vendor/psbits/qa/Resources/Skill/psbits-qa', 0755, true);
-        file_put_contents($this->root . '/.Build/vendor/psbits/qa/Resources/Skill/psbits-qa/SKILL.md', "# Skill\n");
+        foreach (['psbits-qa', 'psbits-foundation', 'psbits-v14-compat'] as $skill) {
+            $skillDir = $this->root . '/.Build/vendor/psbits/qa/Resources/Skill/' . $skill;
+            mkdir($skillDir, 0755, true);
+            file_put_contents($skillDir . '/SKILL.md', "# Skill\n");
+        }
         file_put_contents($this->root . '/composer.json', "{}\n");
     }
 
@@ -23,7 +26,7 @@ final class ApplicationTest extends TestCase
         $this->removeTree($this->root);
     }
 
-    public function testLinkInstallsHookAndSkillLink(): void
+    public function testLinkInstallsHookAndSkillLinks(): void
     {
         chdir($this->root);
         self::assertSame(0, Application::execute(['qa', 'link']));
@@ -33,10 +36,12 @@ final class ApplicationTest extends TestCase
         self::assertFileEquals($hook, __DIR__ . '/../../Resources/GitHooks/pre-commit');
         self::assertNotSame(0, fileperms($hook) & 0111);
 
-        $link = $this->root . '/.opencode/skills/psbits-qa';
-        self::assertTrue(is_link($link));
-        self::assertSame('../../.Build/vendor/psbits/qa/Resources/Skill/psbits-qa', readlink($link));
-        self::assertFileExists($link . '/SKILL.md');
+        foreach (['psbits-qa', 'psbits-foundation', 'psbits-v14-compat'] as $skill) {
+            $link = $this->root . '/.opencode/skills/' . $skill;
+            self::assertTrue(is_link($link));
+            self::assertSame('../../.Build/vendor/psbits/qa/Resources/Skill/' . $skill, readlink($link));
+            self::assertFileExists($link . '/SKILL.md');
+        }
     }
 
     public function testCheckPassesAfterLink(): void
@@ -59,6 +64,14 @@ final class ApplicationTest extends TestCase
         chdir($this->root);
         Application::execute(['qa', 'link']);
         $this->removeTree($this->root . '/.Build/vendor/psbits/qa/Resources/Skill');
+        self::assertSame(1, Application::execute(['qa', 'check']));
+    }
+
+    public function testCheckFailsOnMissingSingleSkillLink(): void
+    {
+        chdir($this->root);
+        Application::execute(['qa', 'link']);
+        unlink($this->root . '/.opencode/skills/psbits-foundation');
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
 
