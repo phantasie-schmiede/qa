@@ -1,6 +1,6 @@
 ---
 name: psbits-v14-compat
-description: Reference for TYPO3 v13.4 and v14.3 dual compatibility in psbits extensions - TCA configuration, Extbase models and localization, event listeners, FlexForm setup, the Functional testing framework, PHPStan docblocks, Fluid 5. Use when writing or reviewing code that must run on both TYPO3 major versions, when upgrading to v14, when debugging v13/v14 behavior differences, or when defining TCA or functional tests.
+description: Reference for TYPO3 v13.4 and v14.3 dual compatibility in PSBits extensions - TCA configuration, Extbase models and localization, event listeners, FlexForm setup, the Functional testing framework, PHPStan docblocks, Fluid 5. Use when writing or reviewing code that must run on both TYPO3 major versions, when upgrading to v14, when debugging v13/v14 behavior differences, or when defining TCA or functional tests.
 ---
 
 # PSBits v13.4/v14.3 Dual Compatibility
@@ -67,7 +67,7 @@ against both core versions.
 
 ## PHPStan pitfalls
 
-- The psbits PHPStan setups run level 6 with `paths: Classes + Tests/Unit` only; vendor bodies
+- The PSBits PHPStan setups run level 6 with `paths: Classes + Tests/Unit` only; vendor bodies
   are not analyzed. Exceptions thrown by core methods are therefore only visible to the
   analyser through `@throws` docblocks on own wrapper methods.
 - An explicit `@throws` list on a method overrides throwables inferred from its body. When a

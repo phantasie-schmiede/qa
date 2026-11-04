@@ -1,6 +1,6 @@
 ---
 name: psbits-qa
-description: QA and verification protocol for psbits TYPO3 extension repositories: composer validate, PHPStan (analyze:php), php-cs-fixer, yamllint, unit and functional tests, the v13.4/v14.3 test matrix (runTests.sh, runLocalTests.sh, runDockerTests.sh), .Build core switching, coverage baselines. Use when running or planning tests, static analysis, code style checks, or any verification round for a psbits extension.
+description: QA and verification protocol for PSBits TYPO3 extension repositories: composer validate, PHPStan (analyze:php), php-cs-fixer, yamllint, unit and functional tests, the v13.4/v14.3 test matrix (runTests.sh, runLocalTests.sh, runDockerTests.sh), .Build core switching, coverage baselines. Use when running or planning tests, static analysis, code style checks, or any verification round for a PSBits extension.
 ---
 
 # PSBits QA Protocol
@@ -74,7 +74,7 @@ directly:
 
 ## Vendor surgery (published dependency bugs)
 
-`.Build/` resolves *published* versions of sibling psbits repos. If a bug lives in a
+`.Build/` resolves *published* versions of sibling PSBits repos. If a bug lives in a
 published version:
 
 1. Patch `.Build/vendor/<vendor>/<repo>/...` locally to prove the diagnosis and unblock

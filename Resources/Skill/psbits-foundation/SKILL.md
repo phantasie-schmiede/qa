@@ -1,11 +1,11 @@
 ---
 name: psbits-foundation
-description: PSBits Foundation 4 integration reference for psbits TYPO3 extensions - why there are no TCA files and usually no ext_tables.sql (both are generated from model attributes), how plugins/modules/page types are registered in ExtensionInformation.php, default language label file paths and key conventions, and auto-registration file locations (FlexForms, TypoScript, TSconfig, icons). Use when working in any psbits extension that depends on psbits/foundation, when a file expected from a standard TYPO3 layout is missing, when adding a domain model, plugin, module or language label, or before deciding that a missing file must be created or "repaired".
+description: PSBits Foundation 4 integration reference for PSBits TYPO3 extensions - why there are no TCA files and usually no ext_tables.sql (both are generated from model attributes), how plugins/modules/page types are registered in ExtensionInformation.php, default language label file paths and key conventions, and auto-registration file locations (FlexForms, TypoScript, TSconfig, icons). Use when working in any PSBits extension that depends on psbits/foundation, when a file expected from a standard TYPO3 layout is missing, when adding a domain model, plugin, module or language label, or before deciding that a missing file must be created or "repaired".
 ---
 
 # PSBits Foundation 4 integration
 
-All psbits extensions build on `psbits/foundation` (^4.2.2). Foundation generates
+All PSBits extensions build on `psbits/foundation` (^4.2.2). Foundation generates
 the TCA and the database schema from PHP attributes on the domain models and
 centralizes the registration of plugins, modules and page types. Repos of
 foundation-based extensions therefore **deliberately deviate from the standard
