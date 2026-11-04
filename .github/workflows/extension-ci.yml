@@ -1,6 +1,6 @@
 name: Extension CI
 
-# Shared test-matrix workflow for the psbits TYPO3 extension repositories.
+# Shared test-matrix workflow for the PSBits TYPO3 extension repositories.
 # Called from each extension's .github/workflows/ci.yml (template in
 # Resources/CI/ci.yml, kept in sync by `qa link` / `qa check`). The caller
 # repository, ref and event are inherited, so every job below runs against

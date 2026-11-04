@@ -10,7 +10,7 @@ use PSBits\Qa\PhpCsFixer\Fixer\ClassBlockSeparationFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\PropertyNamesAlignmentFixer;
 
 /**
- * Builds the shared php-cs-fixer configuration for a psbits extension.
+ * Builds the shared php-cs-fixer configuration for a PSBits extension.
  *
  * The repository keeps a thin Build/Quality/.php-cs-fixer.dist.php shim that
  * calls this factory with its analysis scope - the directories differ

@@ -1,4 +1,4 @@
-# Shared PHPStan baseline for psbits extensions.
+# Shared PHPStan baseline for PSBits extensions.
 #
 # The repository's Build/Quality/phpstan.neon.dist includes this file and adds
 # the repo-specific parts: tmpDir (PHPStan resolves it relative to the

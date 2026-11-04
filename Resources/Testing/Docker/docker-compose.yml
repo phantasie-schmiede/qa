@@ -1,4 +1,4 @@
-# Test matrix runner for a psbits extension (shared by all repositories via
+# Test matrix runner for a PSBits extension (shared by all repositories via
 # the psbits/qa package).
 #
 # Build the test images first:
