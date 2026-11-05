@@ -6,6 +6,8 @@ namespace PSBits\Qa\Testing\Fixtures;
 
 use Psr\EventDispatcher\ListenerProviderInterface;
 
+use function get_class;
+
 /**
  * Class InMemoryListenerProvider
  *

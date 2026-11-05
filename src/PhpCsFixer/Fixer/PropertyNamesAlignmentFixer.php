@@ -23,6 +23,11 @@ use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\Tokenizer\TokensAnalyzer;
 use SplFileInfo;
 
+use function array_key_first;
+use function count;
+use function max;
+use function strlen;
+
 use const T_CALLABLE;
 use const T_NS_SEPARATOR;
 use const T_PRIVATE;
@@ -33,11 +38,6 @@ use const T_STRING;
 use const T_VAR;
 use const T_VARIABLE;
 use const T_WHITESPACE;
-
-use function array_key_first;
-use function count;
-use function max;
-use function strlen;
 
 /**
  * Aligns names of consecutive class property declarations and of consecutive
@@ -111,7 +111,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         $elementsByClass = [];
 
         foreach ((new TokensAnalyzer($tokens))->getClassyElements() as $index => $element) {
-            $element['index'] = $index;
+            $element['index']                          = $index;
             $elementsByClass[$element['classIndex']][] = $element;
         }
 
@@ -135,7 +135,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         }
 
         $naturalColumns = [];
-        $targetColumn = 0;
+        $targetColumn   = 0;
 
         foreach ($block as $position => [$variableIndex, $firstDeclIndex]) {
             $previousToken = $tokens[$variableIndex - 1];
@@ -144,9 +144,9 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
                 continue;
             }
 
-            $column = $this->getVariableColumn($tokens, $variableIndex, $firstDeclIndex);
+            $column                    = $this->getVariableColumn($tokens, $variableIndex, $firstDeclIndex);
             $naturalColumns[$position] = $column - strlen($previousToken->getContent()) + 1;
-            $targetColumn = max($targetColumn, $naturalColumns[$position]);
+            $targetColumn              = max($targetColumn, $naturalColumns[$position]);
         }
 
         if ([] === $naturalColumns) {
@@ -167,7 +167,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
 
     private function alignConstructorParameters(Tokens $tokens, int $functionIndex): void
     {
-        $openParenthesisIndex = $tokens->getNextTokenOfKind($functionIndex, ['(']);
+        $openParenthesisIndex  = $tokens->getNextTokenOfKind($functionIndex, ['(']);
         $closeParenthesisIndex = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_PARENTHESIS_BRACE, $openParenthesisIndex);
 
         $arguments = (new ArgumentsAnalyzer())->getArguments($tokens, $openParenthesisIndex, $closeParenthesisIndex);
@@ -177,7 +177,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
 
         foreach ($arguments as $argumentStartIndex => $argumentEndIndex) {
             $variableIndexes = $tokens->findGivenKind(T_VARIABLE, $argumentStartIndex, $argumentEndIndex + 1);
-            $variableIndex = [] === $variableIndexes ? null : array_key_first($variableIndexes);
+            $variableIndex   = [] === $variableIndexes ? null : array_key_first($variableIndexes);
 
             if (null === $variableIndex) {
                 $this->alignBlock($tokens, $block);
@@ -186,14 +186,14 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
                 continue;
             }
 
-            $firstDeclIndex = $this->findDeclarationStart($tokens, $variableIndex, $argumentStartIndex);
+            $firstDeclIndex      = $this->findDeclarationStart($tokens, $variableIndex, $argumentStartIndex);
             $declarationEndIndex = $tokens->getPrevNonWhitespace($argumentEndIndex);
 
             if (!$this->isOnOwnLine($tokens, $firstDeclIndex) || !$this->isSingleLine(
-                    $tokens,
-                    $firstDeclIndex,
-                    $declarationEndIndex
-                )) {
+                $tokens,
+                $firstDeclIndex,
+                $declarationEndIndex
+            )) {
                 $this->alignBlock($tokens, $block);
                 $block = [];
 
@@ -226,8 +226,8 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
             $previousMeaningfulIndex = $tokens->getPrevMeaningfulToken($index);
 
             if (null === $previousMeaningfulIndex || (null !== $limit && $previousMeaningfulIndex <= $limit) || !$tokens[$previousMeaningfulIndex]->isGivenKind(
-                    self::DECLARATION_PREFIX_TYPES
-                )) {
+                self::DECLARATION_PREFIX_TYPES
+            )) {
                 break;
             }
 
@@ -265,15 +265,15 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
                 continue;
             }
 
-            $variableIndex = $element['index'];
-            $firstDeclIndex = $this->findDeclarationStart($tokens, $variableIndex);
+            $variableIndex     = $element['index'];
+            $firstDeclIndex    = $this->findDeclarationStart($tokens, $variableIndex);
             $separatorEndIndex = $this->getPropertyEnd($tokens, $variableIndex);
 
             if (null === $separatorEndIndex || !$this->isOnOwnLine($tokens, $firstDeclIndex) || !$this->isSingleLine(
-                    $tokens,
-                    $firstDeclIndex,
-                    $separatorEndIndex
-                )) {
+                $tokens,
+                $firstDeclIndex,
+                $separatorEndIndex
+            )) {
                 $this->alignBlock($tokens, $block);
                 $block = [];
 
@@ -314,10 +314,10 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         $endIndex = $tokens->getNextTokenOfKind($variableIndex, [';']);
 
         if (null === $endIndex || [] !== $tokens->findGivenKind(
-                CT::T_PROPERTY_HOOK_BRACE_OPEN,
-                $variableIndex,
-                $endIndex
-            )) {
+            CT::T_PROPERTY_HOOK_BRACE_OPEN,
+            $variableIndex,
+            $endIndex
+        )) {
             return null;
         }
 
@@ -334,7 +334,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         $previousIndex = $firstDeclIndex - 1;
 
         if ($tokens[$previousIndex]->isGivenKind(T_WHITESPACE)) {
-            $content = $tokens[$previousIndex]->getContent();
+            $content           = $tokens[$previousIndex]->getContent();
             $lineBreakPosition = strrpos($content, "\n");
 
             if (false !== $lineBreakPosition) {
@@ -359,7 +359,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
             $token = $tokens[$i];
 
             if ($token->isGivenKind(T_WHITESPACE)) {
-                if (substr_count($token->getContent(), "\n") > 1) {
+                if (1 < substr_count($token->getContent(), "\n")) {
                     return false;
                 }
 
@@ -392,9 +392,9 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         $previousIndex = $firstDeclIndex - 1;
 
         return $tokens[$previousIndex]->isGivenKind(T_WHITESPACE) && str_contains(
-                $tokens[$previousIndex]->getContent(),
-                "\n"
-            );
+            $tokens[$previousIndex]->getContent(),
+            "\n"
+        );
     }
 
     /**

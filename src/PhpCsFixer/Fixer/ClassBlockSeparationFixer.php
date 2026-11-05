@@ -25,8 +25,6 @@ use PhpCsFixer\FixerConfiguration\FixerOptionBuilder;
 use PhpCsFixer\FixerDefinition\CodeSample;
 use PhpCsFixer\FixerDefinition\FixerDefinition;
 use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
-use PhpCsFixer\FixerDefinition\VersionSpecification;
-use PhpCsFixer\FixerDefinition\VersionSpecificCodeSample;
 use PhpCsFixer\Preg;
 use PhpCsFixer\Tokenizer\CT;
 use PhpCsFixer\Tokenizer\FCT;
@@ -35,6 +33,14 @@ use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\Tokenizer\TokensAnalyzer;
 use PhpCsFixer\Utils;
 use Symfony\Component\OptionsResolver\Exception\InvalidOptionsException;
+
+use function assert;
+use function get_class;
+use function gettype;
+use function in_array;
+use function is_object;
+use function sprintf;
+use const T_WHITESPACE;
 
 /**
  * Make sure there is one blank line between different types of class elements.
@@ -67,15 +73,14 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
     /**
      * @internal
      */
-    public const SPACING_NONE = 'none';
+    public const string SPACING_NONE = 'none';
 
     /**
      * @internal
      */
-    public const SPACING_ONE = 'one';
-
-    private const SPACING_ONLY_IF_META = 'only_if_meta';
-    private const MODIFIER_TYPES = [\T_PRIVATE, \T_PROTECTED, \T_PUBLIC, \T_ABSTRACT, \T_FINAL, \T_STATIC, \T_STRING, \T_NS_SEPARATOR, \T_VAR, CT::T_NULLABLE_TYPE, CT::T_ARRAY_TYPEHINT, CT::T_TYPE_ALTERNATION, CT::T_TYPE_INTERSECTION, CT::T_DISJUNCTIVE_NORMAL_FORM_TYPE_PARENTHESIS_OPEN, CT::T_DISJUNCTIVE_NORMAL_FORM_TYPE_PARENTHESIS_CLOSE, FCT::T_READONLY, FCT::T_PRIVATE_SET, FCT::T_PROTECTED_SET, FCT::T_PUBLIC_SET];
+    public const string SPACING_ONE           = 'one';
+    private const array MODIFIER_TYPES        = [\T_PRIVATE, \T_PROTECTED, \T_PUBLIC, \T_ABSTRACT, \T_FINAL, \T_STATIC, \T_STRING, \T_NS_SEPARATOR, \T_VAR, CT::T_NULLABLE_TYPE, CT::T_ARRAY_TYPEHINT, CT::T_TYPE_ALTERNATION, CT::T_TYPE_INTERSECTION, CT::T_DISJUNCTIVE_NORMAL_FORM_TYPE_PARENTHESIS_OPEN, CT::T_DISJUNCTIVE_NORMAL_FORM_TYPE_PARENTHESIS_CLOSE, FCT::T_READONLY, FCT::T_PRIVATE_SET, FCT::T_PROTECTED_SET, FCT::T_PUBLIC_SET];
+    private const string SPACING_ONLY_IF_META = 'only_if_meta';
 
     /**
      * @var array<string, string>
@@ -115,15 +120,6 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         return $tokens->isAnyTokenKindsFound(Token::getClassyTokenKinds());
     }
 
-    protected function configurePostNormalisation(): void
-    {
-        $this->classElementTypes = []; // reset previous configuration
-
-        foreach ($this->configuration['elements'] as $elementType => $spacing) {
-            $this->classElementTypes[$elementType] = $spacing;
-        }
-    }
-
     protected function applyFix(\SplFileInfo $file, Tokens $tokens): void
     {
         foreach ($this->getElementsByClass($tokens) as $class) {
@@ -141,34 +137,43 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         }
     }
 
+    protected function configurePostNormalisation(): void
+    {
+        $this->classElementTypes = []; // reset previous configuration
+
+        foreach ($this->configuration['elements'] as $elementType => $spacing) {
+            $this->classElementTypes[$elementType] = $spacing;
+        }
+    }
+
     protected function createConfigurationDefinition(): FixerConfigurationResolverInterface
     {
         return new FixerConfigurationResolver([
             (new FixerOptionBuilder('elements', 'Dictionary of `const|method|property|trait_import|case` => `none|one|only_if_meta` values.'))
                 ->setAllowedTypes(['array<string, string>'])
-                ->setAllowedValues([static function (array $option): bool {
+                ->setAllowedValues([static function(array $option): bool {
                     foreach ($option as $type => $spacing) {
                         $supportedTypes = ['const', 'method', 'property', 'trait_import', 'case'];
 
-                        if (!\in_array($type, $supportedTypes, true)) {
+                        if (!in_array($type, $supportedTypes, true)) {
                             throw new InvalidOptionsException(
-                                \sprintf(
+                                sprintf(
                                     'Unexpected element type, expected any of %s, got "%s".',
                                     Utils::naturalLanguageJoin($supportedTypes),
-                                    \gettype($type).'#'.$type,
+                                    gettype($type).'#'.$type,
                                 ),
                             );
                         }
 
                         $supportedSpacings = [self::SPACING_NONE, self::SPACING_ONE, self::SPACING_ONLY_IF_META];
 
-                        if (!\in_array($spacing, $supportedSpacings, true)) {
+                        if (!in_array($spacing, $supportedSpacings, true)) {
                             throw new InvalidOptionsException(
-                                \sprintf(
+                                sprintf(
                                     'Unexpected spacing for element type "%s", expected any of %s, got "%s".',
                                     $spacing,
                                     Utils::naturalLanguageJoin($supportedSpacings),
-                                    \is_object($spacing) ? \get_class($spacing) : (null === $spacing ? 'null' : \gettype($spacing).'#'.$spacing),
+                                    is_object($spacing) ? get_class($spacing) : (null === $spacing ? 'null' : gettype($spacing).'#'.$spacing),
                                 ),
                             );
                         }
@@ -177,14 +182,131 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
                     return true;
                 }])
                 ->setDefault([
-                    'const' => self::SPACING_ONE,
-                    'method' => self::SPACING_ONE,
-                    'property' => self::SPACING_ONE,
+                    'case'         => self::SPACING_NONE,
+                    'const'        => self::SPACING_ONE,
+                    'method'       => self::SPACING_ONE,
+                    'property'     => self::SPACING_ONE,
                     'trait_import' => self::SPACING_NONE,
-                    'case' => self::SPACING_NONE,
                 ])
                 ->getOption(),
         ]);
+    }
+
+    private function correctLineBreaks(Tokens $tokens, int $startIndex, int $endIndex, int $reqLineCount): void
+    {
+        $lineEnding = $this->whitespacesConfig->getLineEnding();
+
+        ++$startIndex;
+        $numbOfWhiteTokens = $endIndex - $startIndex;
+
+        if (0 === $numbOfWhiteTokens) {
+            $tokens->insertAt($startIndex, new Token([T_WHITESPACE, str_repeat($lineEnding, $reqLineCount)]));
+
+            return;
+        }
+
+        $lineBreakCount = $this->getLineBreakCount($tokens, $startIndex, $endIndex);
+
+        if ($reqLineCount === $lineBreakCount) {
+            return;
+        }
+
+        if ($lineBreakCount < $reqLineCount) {
+            $tokens[$startIndex] = new Token([
+                T_WHITESPACE,
+                str_repeat($lineEnding, $reqLineCount - $lineBreakCount).$tokens[$startIndex]->getContent(),
+            ]);
+
+            return;
+        }
+
+        // $lineCount = > $reqLineCount : check the one Token case first since this one will be true most of the time
+        if (1 === $numbOfWhiteTokens) {
+            $tokens[$startIndex] = new Token([
+                T_WHITESPACE,
+                Preg::replace('/\r\n|\n/', '', $tokens[$startIndex]->getContent(), $lineBreakCount - $reqLineCount),
+            ]);
+
+            return;
+        }
+    }
+
+    /**
+     * @param _Class $class
+     */
+    private function determineRequiredLineCount(Tokens $tokens, array $class, int $elementIndex): int
+    {
+        // Begin of customization
+        $currentType  = $class['elements'][$elementIndex]['type'];
+        $previousType = $class['elements'][$elementIndex + 1]['type'];
+
+        $headerTypes = [
+            'trait_import',
+            'const',
+            'property',
+            'case',
+        ];
+
+        $currentIsHeader  = in_array($currentType, $headerTypes, true);
+        $previousIsHeader = in_array($previousType, $headerTypes, true);
+
+        if ($currentIsHeader && $previousIsHeader) {
+            return $currentType === $previousType ? 1 : 2;
+        }
+
+        if ('method' === $currentType && $previousIsHeader) {
+            return 2;
+        }
+        // End of customization
+
+        assert(isset($class['elements'][$elementIndex]));
+        $type    = $class['elements'][$elementIndex]['type'];
+        $spacing = $this->classElementTypes[$type];
+
+        if (self::SPACING_ONE === $spacing) {
+            return 2;
+        }
+
+        if (self::SPACING_NONE === $spacing) {
+            assert(isset($class['elements'][$elementIndex + 1]));
+            $aboveElement = $class['elements'][$elementIndex + 1];
+
+            if ($aboveElement['type'] !== $type) {
+                return 2;
+            }
+
+            $aboveElementDocCandidateIndex = $tokens->getPrevNonWhitespace($aboveElement['start']);
+
+            return $tokens[$aboveElementDocCandidateIndex]->isGivenKind([\T_DOC_COMMENT, CT::T_ATTRIBUTE_CLOSE]) ? 2 : 1;
+        }
+
+        // self::SPACING_ONLY_IF_META === $spacing
+        $aboveElementDocCandidateIndex = $tokens->getPrevNonWhitespace($class['elements'][$elementIndex]['start']);
+
+        return $tokens[$aboveElementDocCandidateIndex]->isGivenKind([\T_DOC_COMMENT, CT::T_ATTRIBUTE_CLOSE]) ? 2 : 1;
+    }
+
+    private function findCommentBlockStart(Tokens $tokens, int $start, int $elementAboveEnd): int
+    {
+        for ($i = $start; $i > $elementAboveEnd; --$i) {
+            if ($tokens[$i]->isGivenKind(CT::T_ATTRIBUTE_CLOSE)) {
+                $start = $i = $tokens->findBlockStart(Tokens::BLOCK_TYPE_ATTRIBUTE, $i);
+
+                continue;
+            }
+
+            if ($tokens[$i]->isComment()) {
+                $start = $i;
+
+                continue;
+            }
+
+            if (!$tokens[$i]->isWhitespace() || 1 < $this->getLineBreakCount($tokens, $i, $i + 1)) {
+                break;
+            }
+        }
+
+        return $start;
     }
 
     /**
@@ -197,10 +319,10 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
      */
     private function fixSpaceAboveClassElement(Tokens $tokens, array $class, int $elementIndex): void
     {
-        \assert(isset($class['elements'][$elementIndex]));
-        $element = $class['elements'][$elementIndex];
+        assert(isset($class['elements'][$elementIndex]));
+        $element         = $class['elements'][$elementIndex];
         $elementAboveEnd = isset($class['elements'][$elementIndex + 1]) ? $class['elements'][$elementIndex + 1]['end'] : 0;
-        $nonWhiteAbove = $tokens->getPrevNonWhitespace($element['start']);
+        $nonWhiteAbove   = $tokens->getPrevNonWhitespace($element['start']);
 
         // element is directly after class open brace
         if ($nonWhiteAbove === $class['open']) {
@@ -219,7 +341,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
             }
 
             // more than one line break, always bring it back to 2 line breaks between the element start and what is above it
-            if ($tokens[$nonWhiteAbove + 1]->isWhitespace() && substr_count($tokens[$nonWhiteAbove + 1]->getContent(), "\n") > 1) {
+            if ($tokens[$nonWhiteAbove + 1]->isWhitespace() && 1 < substr_count($tokens[$nonWhiteAbove + 1]->getContent(), "\n")) {
                 $this->correctLineBreaks($tokens, $nonWhiteAbove, $element['start'], 2);
 
                 return;
@@ -228,26 +350,30 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
             // there are 2 cases:
             if (
                 1 === $element['start'] - $nonWhiteAbove
-                || $tokens[$nonWhiteAbove - 1]->isWhitespace() && substr_count($tokens[$nonWhiteAbove - 1]->getContent(), "\n") > 0
-                || $tokens[$nonWhiteAbove + 1]->isWhitespace() && substr_count($tokens[$nonWhiteAbove + 1]->getContent(), "\n") > 0
+                || $tokens[$nonWhiteAbove - 1]->isWhitespace() && 0 < substr_count($tokens[$nonWhiteAbove - 1]->getContent(), "\n")
+                || $tokens[$nonWhiteAbove + 1]->isWhitespace() && 0 < substr_count($tokens[$nonWhiteAbove + 1]->getContent(), "\n")
             ) {
-                // 1. The comment is meant for the element (although not a PHPDoc),
-                //    make sure there is one line break between the element and the comment...
+                /*
+                 * 1. The comment is meant for the element (although not a PHPDoc),
+                 *    make sure there is one line break between the element and the comment...
+                 */
                 $this->correctLineBreaks($tokens, $nonWhiteAbove, $element['start'], 1);
                 //    ... and make sure there is blank line above the comment (with the exception when it is directly after a class opening)
-                $nonWhiteAbove = $this->findCommentBlockStart($tokens, $nonWhiteAbove, $elementAboveEnd);
+                $nonWhiteAbove        = $this->findCommentBlockStart($tokens, $nonWhiteAbove, $elementAboveEnd);
                 $nonWhiteAboveComment = $tokens->getPrevNonWhitespace($nonWhiteAbove);
 
                 if ($nonWhiteAboveComment === $class['open']) {
-                    if ($tokens[$nonWhiteAboveComment - 1]->isWhitespace() && substr_count($tokens[$nonWhiteAboveComment - 1]->getContent(), "\n") > 0) {
+                    if ($tokens[$nonWhiteAboveComment - 1]->isWhitespace() && 0 < substr_count($tokens[$nonWhiteAboveComment - 1]->getContent(), "\n")) {
                         $this->correctLineBreaks($tokens, $nonWhiteAboveComment, $nonWhiteAbove, 1);
                     }
                 } else {
                     $this->correctLineBreaks($tokens, $nonWhiteAboveComment, $nonWhiteAbove, 2);
                 }
             } else {
-                // 2. The comment belongs to the code above the element,
-                //    make sure there is a blank line above the element (i.e. 2 line breaks)
+                /*
+                 * 2. The comment belongs to the code above the element,
+                 *    make sure there is a blank line above the element (i.e. 2 line breaks)
+                 */
                 $this->correctLineBreaks($tokens, $nonWhiteAbove, $element['start'], 2);
             }
 
@@ -260,7 +386,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
             $this->correctLineBreaks($tokens, $nonWhiteAbove, $element['start'], 1);
 
             // make sure there is blank line above the comment (with the exception when it is directly after a class opening)
-            $nonWhiteAbove = $this->findCommentBlockStart($tokens, $nonWhiteAbove, $elementAboveEnd);
+            $nonWhiteAbove        = $this->findCommentBlockStart($tokens, $nonWhiteAbove, $elementAboveEnd);
             $nonWhiteAboveComment = $tokens->getPrevNonWhitespace($nonWhiteAbove);
 
             $this->correctLineBreaks($tokens, $nonWhiteAboveComment, $nonWhiteAbove, $nonWhiteAboveComment === $class['open'] ? 1 : 2);
@@ -269,61 +395,6 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         }
 
         $this->correctLineBreaks($tokens, $nonWhiteAbove, $element['start'], $this->determineRequiredLineCount($tokens, $class, $elementIndex));
-    }
-
-    /**
-     * @param _Class $class
-     */
-    private function determineRequiredLineCount(Tokens $tokens, array $class, int $elementIndex): int
-    {
-        // Begin of customization
-        $currentType = $class['elements'][$elementIndex]['type'];
-        $previousType = $class['elements'][$elementIndex + 1]['type'];
-
-        $headerTypes = [
-            'trait_import',
-            'const',
-            'property',
-            'case',
-        ];
-
-        $currentIsHeader = \in_array($currentType, $headerTypes, true);
-        $previousIsHeader = \in_array($previousType, $headerTypes, true);
-
-        if ($currentIsHeader && $previousIsHeader) {
-            return $currentType === $previousType ? 1 : 2;
-        }
-
-        if ('method' === $currentType && $previousIsHeader) {
-            return 2;
-        }
-        // End of customization
-
-        \assert(isset($class['elements'][$elementIndex]));
-        $type = $class['elements'][$elementIndex]['type'];
-        $spacing = $this->classElementTypes[$type];
-
-        if (self::SPACING_ONE === $spacing) {
-            return 2;
-        }
-
-        if (self::SPACING_NONE === $spacing) {
-            \assert(isset($class['elements'][$elementIndex + 1]));
-            $aboveElement = $class['elements'][$elementIndex + 1];
-
-            if ($aboveElement['type'] !== $type) {
-                return 2;
-            }
-
-            $aboveElementDocCandidateIndex = $tokens->getPrevNonWhitespace($aboveElement['start']);
-
-            return $tokens[$aboveElementDocCandidateIndex]->isGivenKind([\T_DOC_COMMENT, CT::T_ATTRIBUTE_CLOSE]) ? 2 : 1;
-        }
-
-        // self::SPACING_ONLY_IF_META === $spacing
-        $aboveElementDocCandidateIndex = $tokens->getPrevNonWhitespace($class['elements'][$elementIndex]['start']);
-
-        return $tokens[$aboveElementDocCandidateIndex]->isGivenKind([\T_DOC_COMMENT, CT::T_ATTRIBUTE_CLOSE]) ? 2 : 1;
     }
 
     /**
@@ -339,86 +410,13 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         }
     }
 
-    private function correctLineBreaks(Tokens $tokens, int $startIndex, int $endIndex, int $reqLineCount): void
-    {
-        $lineEnding = $this->whitespacesConfig->getLineEnding();
-
-        ++$startIndex;
-        $numbOfWhiteTokens = $endIndex - $startIndex;
-
-        if (0 === $numbOfWhiteTokens) {
-            $tokens->insertAt($startIndex, new Token([\T_WHITESPACE, str_repeat($lineEnding, $reqLineCount)]));
-
-            return;
-        }
-
-        $lineBreakCount = $this->getLineBreakCount($tokens, $startIndex, $endIndex);
-
-        if ($reqLineCount === $lineBreakCount) {
-            return;
-        }
-
-        if ($lineBreakCount < $reqLineCount) {
-            $tokens[$startIndex] = new Token([
-                \T_WHITESPACE,
-                str_repeat($lineEnding, $reqLineCount - $lineBreakCount).$tokens[$startIndex]->getContent(),
-            ]);
-
-            return;
-        }
-
-        // $lineCount = > $reqLineCount : check the one Token case first since this one will be true most of the time
-        if (1 === $numbOfWhiteTokens) {
-            $tokens[$startIndex] = new Token([
-                \T_WHITESPACE,
-                Preg::replace('/\r\n|\n/', '', $tokens[$startIndex]->getContent(), $lineBreakCount - $reqLineCount),
-            ]);
-
-            return;
-        }
-    }
-
-    private function getLineBreakCount(Tokens $tokens, int $startIndex, int $endIndex): int
-    {
-        $lineCount = 0;
-
-        for ($i = $startIndex; $i < $endIndex; ++$i) {
-            $lineCount += substr_count($tokens[$i]->getContent(), "\n");
-        }
-
-        return $lineCount;
-    }
-
-    private function findCommentBlockStart(Tokens $tokens, int $start, int $elementAboveEnd): int
-    {
-        for ($i = $start; $i > $elementAboveEnd; --$i) {
-            if ($tokens[$i]->isGivenKind(CT::T_ATTRIBUTE_CLOSE)) {
-                $start = $i = $tokens->findBlockStart(Tokens::BLOCK_TYPE_ATTRIBUTE, $i);
-
-                continue;
-            }
-
-            if ($tokens[$i]->isComment()) {
-                $start = $i;
-
-                continue;
-            }
-
-            if (!$tokens[$i]->isWhitespace() || $this->getLineBreakCount($tokens, $i, $i + 1) > 1) {
-                break;
-            }
-        }
-
-        return $start;
-    }
-
     /**
      * @return iterable<_Class>
      */
     private function getElementsByClass(Tokens $tokens): iterable
     {
         $tokensAnalyzer = new TokensAnalyzer($tokens);
-        $class = null;
+        $class          = null;
 
         foreach (array_reverse($tokensAnalyzer->getClassyElements(), true) as $index => $element) {
             $element['index'] = $index;
@@ -429,19 +427,19 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
                 }
 
                 $classIndex = $element['classIndex'];
-                $classOpen = $tokens->getNextTokenOfKind($classIndex, ['{']);
-                $classEnd = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_CURLY_BRACE, $classOpen);
-                $class = [
-                    'index' => $element['classIndex'],
-                    'open' => $classOpen,
-                    'close' => $classEnd,
+                $classOpen  = $tokens->getNextTokenOfKind($classIndex, ['{']);
+                $classEnd   = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_CURLY_BRACE, $classOpen);
+                $class      = [
+                    'index'    => $element['classIndex'],
+                    'open'     => $classOpen,
+                    'close'    => $classEnd,
                     'elements' => [],
                 ];
             }
 
             unset($element['classIndex']);
             $element['start'] = $this->getFirstTokenIndexOfClassElement($tokens, $class['open'], $index);
-            $element['end'] = $this->getLastTokenIndexOfClassElement($tokens, $class['index'], $index, $element['type'], $tokensAnalyzer);
+            $element['end']   = $this->getLastTokenIndexOfClassElement($tokens, $class['index'], $index, $element['type'], $tokensAnalyzer);
 
             $class['elements'][] = $element; // reset the key by design
         }
@@ -526,5 +524,16 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         }
 
         return $elementEndIndex;
+    }
+
+    private function getLineBreakCount(Tokens $tokens, int $startIndex, int $endIndex): int
+    {
+        $lineCount = 0;
+
+        for ($i = $startIndex; $i < $endIndex; ++$i) {
+            $lineCount += substr_count($tokens[$i]->getContent(), "\n");
+        }
+
+        return $lineCount;
     }
 }

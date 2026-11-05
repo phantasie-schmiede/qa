@@ -25,22 +25,12 @@ final class RenderPhpunitXmlTest extends TestCase
         $this->removeTree($this->root);
     }
 
-    public function testRendersUnitAndFunctionalWithAbsolutePaths(): void
+    public function testFailsWithoutAnySuiteDirectory(): void
     {
-        [$code, ] = $this->runRenderer();
-        self::assertSame(0, $code);
-
-        $unit = simplexml_load_file($this->root . '/.Build/phpunit/UnitTests.xml');
-        self::assertNotNull($unit);
-        self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/UnitTestsBootstrap.php', (string) $unit['bootstrap']);
-        self::assertSame($this->root . '/.Build/.phpunit.cache', (string) $unit['cacheDirectory']);
-        self::assertSame($this->root . '/Tests/Unit', (string) $unit->testsuites->testsuite->directory);
-        self::assertSame($this->root . '/Classes', (string) $unit->source->include->directory);
-
-        $functional = simplexml_load_file($this->root . '/.Build/phpunit/FunctionalTests.xml');
-        self::assertNotNull($functional);
-        self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/FunctionalTestsBootstrap.php', (string) $functional['bootstrap']);
-        self::assertSame($this->root . '/Tests/Functional', (string) $functional->testsuites->testsuite->directory);
+        $this->removeTree($this->root . '/Tests');
+        [$code, $output] = $this->runRenderer();
+        self::assertSame(1, $code);
+        self::assertStringContainsString('no Tests/Unit or Tests/Functional', $output);
     }
 
     public function testRenderedXmlMatchesTheCommittedReferenceTemplates(): void
@@ -64,6 +54,24 @@ final class RenderPhpunitXmlTest extends TestCase
         }
     }
 
+    public function testRendersUnitAndFunctionalWithAbsolutePaths(): void
+    {
+        [$code, ] = $this->runRenderer();
+        self::assertSame(0, $code);
+
+        $unit = simplexml_load_file($this->root . '/.Build/phpunit/UnitTests.xml');
+        self::assertNotNull($unit);
+        self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/UnitTestsBootstrap.php', (string) $unit['bootstrap']);
+        self::assertSame($this->root . '/.Build/.phpunit.cache', (string) $unit['cacheDirectory']);
+        self::assertSame($this->root . '/Tests/Unit', (string) $unit->testsuites->testsuite->directory);
+        self::assertSame($this->root . '/Classes', (string) $unit->source->include->directory);
+
+        $functional = simplexml_load_file($this->root . '/.Build/phpunit/FunctionalTests.xml');
+        self::assertNotNull($functional);
+        self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/FunctionalTestsBootstrap.php', (string) $functional['bootstrap']);
+        self::assertSame($this->root . '/Tests/Functional', (string) $functional->testsuites->testsuite->directory);
+    }
+
     public function testSkipsMissingFunctionalSuite(): void
     {
         $this->removeTree($this->root . '/Tests/Functional');
@@ -72,29 +80,6 @@ final class RenderPhpunitXmlTest extends TestCase
 
         self::assertFileExists($this->root . '/.Build/phpunit/UnitTests.xml');
         self::assertFileDoesNotExist($this->root . '/.Build/phpunit/FunctionalTests.xml');
-    }
-
-    public function testFailsWithoutAnySuiteDirectory(): void
-    {
-        $this->removeTree($this->root . '/Tests');
-        [$code, $output] = $this->runRenderer();
-        self::assertSame(1, $code);
-        self::assertStringContainsString('no Tests/Unit or Tests/Functional', $output);
-    }
-
-    /** @return array{0: int, 1: string} */
-    private function runRenderer(): array
-    {
-        $output = [];
-        $code = 0;
-        exec(
-            'PSBITS_QA_REPO_ROOT=' . escapeshellarg($this->root)
-            . ' php ' . escapeshellarg(__DIR__ . '/../../Resources/Testing/renderPhpunitXml.php')
-            . ' all 2>&1',
-            $output,
-            $code,
-        );
-        return [$code, implode("\n", $output)];
     }
 
     private function removeTree(string $path): void
@@ -106,10 +91,27 @@ final class RenderPhpunitXmlTest extends TestCase
             new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST,
         );
+
         foreach ($iterator as $item) {
             $itemPath = $item->getPathname();
             is_link($itemPath) ? unlink($itemPath) : ($item->isDir() ? rmdir($itemPath) : unlink($itemPath));
         }
         rmdir($path);
+    }
+
+    /** @return array{0: int, 1: string} */
+    private function runRenderer(): array
+    {
+        $output = [];
+        $code   = 0;
+        exec(
+            'PSBITS_QA_REPO_ROOT=' . escapeshellarg($this->root)
+            . ' php ' . escapeshellarg(__DIR__ . '/../../Resources/Testing/renderPhpunitXml.php')
+            . ' all 2>&1',
+            $output,
+            $code,
+        );
+
+        return [$code, implode("\n", $output)];
     }
 }
