@@ -18,9 +18,18 @@ final class LanguageStackSeederTest extends UnitTestCase
 
     protected bool $resetSingletonInstances = true;
 
+    public function testTheCacheManagerSingletonServesThePreSeededService(): void
+    {
+        $this->seedLanguageStack();
+
+        $cacheManager = GeneralUtility::getSingletonInstances()[CacheManager::class] ?? null;
+        self::assertNotNull($cacheManager);
+        self::assertInstanceOf(FrontendInterface::class, $cacheManager->getCache('core'));
+    }
+
     public function testTheLanguageServiceFactorySingletonServesTheLabelledService(): void
     {
-        $this->seedLanguageStack(static fn (string $key): string => 'Label ' . $key);
+        $this->seedLanguageStack(static fn(string $key): string => 'Label ' . $key);
 
         $factory = GeneralUtility::getSingletonInstances()[LanguageServiceFactory::class] ?? null;
         self::assertInstanceOf(FakeLanguageServiceFactory::class, $factory);
@@ -30,14 +39,5 @@ final class LanguageStackSeederTest extends UnitTestCase
             ? $languageService->translate('key', 'test-domain')
             : $languageService->sL('key');
         self::assertSame('Label key', $label);
-    }
-
-    public function testTheCacheManagerSingletonServesThePreSeededService(): void
-    {
-        $this->seedLanguageStack();
-
-        $cacheManager = GeneralUtility::getSingletonInstances()[CacheManager::class] ?? null;
-        self::assertNotNull($cacheManager);
-        self::assertInstanceOf(FrontendInterface::class, $cacheManager->getCache('core'));
     }
 }

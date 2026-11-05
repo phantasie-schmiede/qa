@@ -26,6 +26,28 @@ final class FrontendRequestFactory
      * @param array<string, mixed> $viewSetup
      * @param array<string, mixed> $requestAttributes
      */
+    public static function createExtbaseRequest(
+        string $controllerClass,
+        string $pluginName,
+        string $action,
+        string $pluginKey,
+        array  $viewSetup = [],
+        array  $requestAttributes = [],
+    ): Request {
+        $extbaseRequestParameters = (new ExtbaseRequestParameters($controllerClass))
+            ->setPluginName($pluginName)
+            ->setControllerActionName($action);
+
+        $request = self::createFrontendRequest($pluginKey, $viewSetup, $requestAttributes)
+            ->withAttribute('extbase', $extbaseRequestParameters);
+
+        return new Request($request);
+    }
+
+    /**
+     * @param array<string, mixed> $viewSetup
+     * @param array<string, mixed> $requestAttributes
+     */
     public static function createFrontendRequest(
         string $pluginKey,
         array  $viewSetup = [],
@@ -62,27 +84,5 @@ final class FrontendRequestFactory
         }
 
         return $request;
-    }
-
-    /**
-     * @param array<string, mixed> $viewSetup
-     * @param array<string, mixed> $requestAttributes
-     */
-    public static function createExtbaseRequest(
-        string $controllerClass,
-        string $pluginName,
-        string $action,
-        string $pluginKey,
-        array  $viewSetup = [],
-        array  $requestAttributes = [],
-    ): Request {
-        $extbaseRequestParameters = (new ExtbaseRequestParameters($controllerClass))
-            ->setPluginName($pluginName)
-            ->setControllerActionName($action);
-
-        $request = self::createFrontendRequest($pluginKey, $viewSetup, $requestAttributes)
-            ->withAttribute('extbase', $extbaseRequestParameters);
-
-        return new Request($request);
     }
 }

@@ -33,8 +33,8 @@ trait SiteBasedTestTrait
     protected function buildSiteConfiguration(int $rootPageId, string $base = ''): array
     {
         return [
-            'rootPageId' => $rootPageId,
             'base'       => $base,
+            'rootPageId' => $rootPageId,
         ];
     }
 

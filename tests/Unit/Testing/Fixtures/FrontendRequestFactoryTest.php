@@ -12,6 +12,26 @@ use TYPO3\CMS\Extbase\Mvc\Request;
 
 final class FrontendRequestFactoryTest extends TestCase
 {
+    public function testCreateExtbaseRequestWrapsTheFrontendRequest(): void
+    {
+        $request = FrontendRequestFactory::createExtbaseRequest(
+            'PSBits\\Test\\Controller\\TestController',
+            'TestPlugin',
+            'show',
+            'tx_testextension',
+        );
+
+        self::assertInstanceOf(Request::class, $request);
+
+        $parameters = $request->getAttribute('extbase');
+        self::assertInstanceOf(ExtbaseRequestParameters::class, $parameters);
+        self::assertSame('PSBits\Test\Controller\TestController', $parameters->getControllerObjectName());
+        self::assertSame('TestPlugin', $parameters->getPluginName());
+        self::assertSame('show', $parameters->getControllerActionName());
+
+        self::assertSame(SystemEnvironmentBuilder::REQUESTTYPE_FE, $request->getAttribute('applicationType'));
+    }
+
     public function testCreateFrontendRequestBuildsARequestWithTheFrameworkConfiguration(): void
     {
         $request = FrontendRequestFactory::createFrontendRequest('tx_testextension');
@@ -53,25 +73,5 @@ final class FrontendRequestFactoryTest extends TestCase
             ],
         ], $typoscript->getSetupArray());
         self::assertSame('site-instance', $request->getAttribute('site'));
-    }
-
-    public function testCreateExtbaseRequestWrapsTheFrontendRequest(): void
-    {
-        $request = FrontendRequestFactory::createExtbaseRequest(
-            'PSBits\\Test\\Controller\\TestController',
-            'TestPlugin',
-            'show',
-            'tx_testextension',
-        );
-
-        self::assertInstanceOf(Request::class, $request);
-
-        $parameters = $request->getAttribute('extbase');
-        self::assertInstanceOf(ExtbaseRequestParameters::class, $parameters);
-        self::assertSame('PSBits\Test\Controller\TestController', $parameters->getControllerObjectName());
-        self::assertSame('TestPlugin', $parameters->getPluginName());
-        self::assertSame('show', $parameters->getControllerActionName());
-
-        self::assertSame(SystemEnvironmentBuilder::REQUESTTYPE_FE, $request->getAttribute('applicationType'));
     }
 }
