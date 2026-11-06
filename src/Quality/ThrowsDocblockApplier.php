@@ -4,9 +4,23 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Quality;
 
+use function array_map;
+use function array_merge;
+use function array_unique;
+use function array_values;
 use function count;
+use function explode;
+use function file_get_contents;
+use function file_put_contents;
+use function implode;
 use function in_array;
+use function ltrim;
 use function strlen;
+use function strrpos;
+use function substr;
+use function substr_count;
+use function trim;
+use function usort;
 
 /**
  * Rewrites the @throws types of the methods and functions that the

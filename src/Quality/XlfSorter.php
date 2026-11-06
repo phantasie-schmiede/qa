@@ -5,11 +5,22 @@ declare(strict_types=1);
 namespace PSBits\Qa\Quality;
 
 use DirectoryIterator;
-
 use RuntimeException;
+
+use function array_map;
+use function array_merge;
 use function array_slice;
 use function count;
+use function explode;
+use function file_get_contents;
+use function file_put_contents;
+use function implode;
 use function in_array;
+use function is_file;
+use function sort;
+use function str_ends_with;
+use function trim;
+use function usort;
 
 /**
  * Keeps the <trans-unit> elements of XLIFF language files sorted by id

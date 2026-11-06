@@ -18,7 +18,12 @@ use PHPStan\Type\ObjectType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeUtils;
 
+use function array_map;
+use function array_unique;
+use function array_values;
+use function implode;
 use function sprintf;
+use function usort;
 
 /**
  * Checks that the @throws types of a method or function match exactly the

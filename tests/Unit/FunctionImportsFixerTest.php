@@ -69,6 +69,52 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    public function testIgnoresUnqualifiedMemberCalls(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            namespace App;
+
+            final class Demo
+            {
+                public static function count(): int
+                {
+                    return 42;
+                }
+
+                public function run(): int
+                {
+                    $other = new Demo();
+
+                    return self::count() + $other->count() + count(['a', 'b']);
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+            use function count;
+
+            final class Demo
+            {
+                public static function count(): int
+                {
+                    return 42;
+                }
+
+                public function run(): int
+                {
+                    $other = new Demo();
+
+                    return self::count() + $other->count() + count(['a', 'b']);
+                }
+            }
+            php, $this->fix(new FunctionImportsFixer(), $code));
+    }
+
     public function testImportsAfterTheExistingImports(): void
     {
         $code = <<<'php'
@@ -125,6 +171,33 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    public function testImportsMixedQualifiedAndUnqualifiedCalls(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            namespace App;
+
+            function demo(string $line): int
+            {
+                return \count(['a', 'b']) + strlen($line);
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+            use function count;
+            use function strlen;
+
+            function demo(string $line): int
+            {
+                return count(['a', 'b']) + strlen($line);
+            }
+            php, $this->fix(new FunctionImportsFixer(), $code));
+    }
+
     public function testImportsMultipleFunctionsSorted(): void
     {
         $code = <<<'php'
@@ -154,6 +227,37 @@ final class FunctionImportsFixerTest extends TestCase
                     'count' => strlen($line),
                     'name'  => strtolower($line),
                 ];
+            }
+            php, $this->fix(new FunctionImportsFixer(), $code));
+    }
+
+    public function testImportsUnqualifiedCallsOfListedFunctions(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            namespace App;
+
+            use App\Other;
+
+            function demo(): int
+            {
+                return count(['a', 'b']) + strlen('x');
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            use App\Other;
+            use function count;
+            use function strlen;
+
+            function demo(): int
+            {
+                return count(['a', 'b']) + strlen('x');
             }
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
@@ -207,16 +311,16 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
     }
 
-    public function testLeavesUnqualifiedCallsUntouched(): void
+    public function testLeavesUnqualifiedCallsOfUnlistedFunctionsUntouched(): void
     {
         $code = <<<'php'
             <?php
 
             namespace App;
 
-            function demo(): int
+            function demo(): string
             {
-                return count(['a', 'b']);
+                return filter_var('abc', FILTER_SANITIZE_STRING);
             }
             php;
 
@@ -267,6 +371,29 @@ final class FunctionImportsFixerTest extends TestCase
             function demo(): int
             {
                 return \count(['a', 'b']);
+            }
+            php;
+
+        self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
+    }
+
+    public function testSkipsUnqualifiedCallsOfShadowedNames(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            namespace App;
+
+            use function App\count;
+
+            function strlen(): int
+            {
+                return 42;
+            }
+
+            function demo(): int
+            {
+                return count(['a', 'b']) + strlen('x');
             }
             php;
 

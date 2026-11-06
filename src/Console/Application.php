@@ -7,13 +7,22 @@ namespace PSBits\Qa\Console;
 use FilesystemIterator;
 use PSBits\Qa\Quality\ThrowsFixer;
 use PSBits\Qa\Quality\XlfSorter;
-
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+
+use function chmod;
 use function count;
 use function dirname;
+use function file_get_contents;
+use function is_dir;
+use function is_file;
+use function mkdir;
+use function rmdir;
+use function str_starts_with;
 use function strlen;
+use function substr;
+use function unlink;
 
 /**
  * Class Application

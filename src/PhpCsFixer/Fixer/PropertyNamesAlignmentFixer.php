@@ -26,7 +26,12 @@ use SplFileInfo;
 use function array_key_first;
 use function count;
 use function max;
+use function str_contains;
+use function str_repeat;
 use function strlen;
+use function strrpos;
+use function substr;
+use function substr_count;
 
 use const T_CALLABLE;
 use const T_NS_SEPARATOR;

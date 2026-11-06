@@ -6,6 +6,8 @@ namespace PSBits\Qa\Testing\Fixtures;
 
 use Psr\EventDispatcher\ListenerProviderInterface;
 
+use function array_merge;
+use function array_values;
 use function get_class;
 
 /**

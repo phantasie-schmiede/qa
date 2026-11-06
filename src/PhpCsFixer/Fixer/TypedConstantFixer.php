@@ -16,6 +16,7 @@ use PhpCsFixer\AbstractFixer;
 use PhpCsFixer\FixerDefinition\CodeSample;
 use PhpCsFixer\FixerDefinition\FixerDefinition;
 use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
+use PhpCsFixer\Tokenizer\CT;
 use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\Tokenizer\TokensAnalyzer;
@@ -26,6 +27,7 @@ use function in_array;
 use function strlen;
 
 use const T_CONST;
+use const T_CURLY_OPEN;
 use const T_DNUMBER;
 use const T_FINAL;
 use const T_LNUMBER;
@@ -37,27 +39,27 @@ use const T_WHITESPACE;
 
 /**
  * Adds a type declaration to class constants whose value is a scalar
- * literal the type can be inferred from (int, float, string, bool, null).
+ * literal or an array literal the type can be inferred from (int,
+ * float, string, bool, null, array).
  *
- * Constants with expressions, array values or any other value that does not
- * reveal the type unambiguously are left untouched. A statement with
- * multiple constants is only typed when all of them share the same type.
+ * Constants with expressions or any other value that does not reveal
+ * the type unambiguously are left untouched. A statement with multiple
+ * constants is only typed when all of them share the same type.
  *
  * The fixer works on the token list: the TokensAnalyzer locates the
  * constant declarations of all class-like blocks by their token indices,
- * and a statement is split at its top-level = and , tokens with a plain
- * nesting-depth counter, so operators inside a nested expression are not
- * mistaken for separators. The inferred type is inserted with insertAt(),
- * which shifts the indices of all tokens behind the insertion - the
- * fixer therefore types one constant at a time and rescans until a pass
- * changes nothing.
+ * and a statement is split at its top-level = and , tokens, nested
+ * expressions being jumped over with the tokenizer's block ends. The
+ * inferred type is inserted with insertAt(), which shifts the indices of
+ * all tokens behind the insertion - the fixer therefore types one
+ * constant at a time and rescans until a pass changes nothing.
  */
 final class TypedConstantFixer extends AbstractFixer
 {
     public function getDefinition(): FixerDefinitionInterface
     {
         return new FixerDefinition(
-            'Adds a type declaration to class constants with scalar literal values.',
+            'Adds a type declaration to class constants with scalar or array literal values.',
             [
                 new CodeSample(
                     "<?php\nclass Demo\n{\n    const LIMIT = 10;\n    const NAME = 'demo';\n}\n"
@@ -141,10 +143,10 @@ final class TypedConstantFixer extends AbstractFixer
     /**
      * Finds the full statement a const declaration belongs to: its start
      * (walking back over the visibility and final modifiers), the
-     * terminating semicolon and the token range of every value. The =
-     * and , tokens are only collected at nesting depth 0, so operators
-     * inside a nested expression (arrays, calls, ...) are not mistaken
-     * for statement separators.
+     * terminating semicolon and the token range of every value. Nested
+     * expressions are jumped over with the tokenizer's block ends, so
+     * the = and , tokens inside them are not mistaken for statement
+     * separators.
      *
      * @return null|array{
      *     start: int,
@@ -171,24 +173,37 @@ final class TypedConstantFixer extends AbstractFixer
 
         $equalsIndices = [];
         $commaIndices  = [];
-        $depth         = 0;
 
         for ($i = $constIndex + 1; $i < $end; ++$i) {
             $token = $tokens[$i];
 
-            if ($token->equals('(') || $token->equals('[') || $token->equals('{')) {
-                ++$depth;
+            /*
+             * Nested constructs are jumped over whole with the tokenizer's
+             * block ends, so their = and , never reach the collectors
+             * below; a short array bracket carries a CT token id and does
+             * not match the plain [ string.
+             */
+            if ($token->isGivenKind(CT::T_ARRAY_SQUARE_BRACE_OPEN)) {
+                $i = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_ARRAY_SQUARE_BRACE, $i);
 
                 continue;
             }
 
-            if ($token->equals(')') || $token->equals(']') || $token->equals('}')) {
-                --$depth;
+            if ($token->equals('[')) {
+                $i = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_INDEX_SQUARE_BRACE, $i);
 
                 continue;
             }
 
-            if (0 !== $depth) {
+            if ($token->equals('(')) {
+                $i = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_PARENTHESIS_BRACE, $i);
+
+                continue;
+            }
+
+            if ($token->equals('{') || $token->isGivenKind(T_CURLY_OPEN)) {
+                $i = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_CURLY_BRACE, $i);
+
                 continue;
             }
 
@@ -283,7 +298,8 @@ final class TypedConstantFixer extends AbstractFixer
      * number tokens, string literals (matched by content, the token kind
      * is PHP-version dependent), and the true/false/null keywords, which
      * the tokenizer delivers as T_STRING tokens; a negative number is
-     * the two-token case of - plus a number token.
+     * the two-token case of - plus a number token. A value that is
+     * exactly one array literal - whatever it contains - is an array.
      */
     private function inferType(Tokens $tokens, int $valueStart, int $valueEnd): ?string
     {
@@ -335,6 +351,17 @@ final class TypedConstantFixer extends AbstractFixer
             if ($valueTokens[1]->isGivenKind(T_DNUMBER)) {
                 return 'float';
             }
+        }
+
+        /*
+         * a value that is exactly one array literal is an array,
+         * whatever its content is (findBlockEnd skips the nesting)
+         */
+        if (
+            $tokens[$valueStart]->isGivenKind(CT::T_ARRAY_SQUARE_BRACE_OPEN)
+            && $tokens->findBlockEnd(Tokens::BLOCK_TYPE_ARRAY_SQUARE_BRACE, $valueStart) === $valueEnd
+        ) {
+            return 'array';
         }
 
         return null;

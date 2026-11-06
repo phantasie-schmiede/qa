@@ -109,8 +109,9 @@ public function resolve(array $ids): array
 ### 6. Constants are always typed
 
 Class constants carry a type declaration when the value reveals it
-unambiguously (scalar literals); a statement with several constants is typed
-only when they all share the type.
+unambiguously: scalar literals (int, float, string, bool, null) and array
+literals (array); a statement with several constants is typed only when
+they all share the type.
 
 ```php
 final class Config
@@ -143,11 +144,17 @@ final class CleanupService
 ```
 
 - The fixer converts every backslash-prefixed call of a global function into
-  the import + short name; it never adds imports for calls that are already
-  unqualified (the house style does not import every global function).
-- It leaves a backslash call untouched when the file's namespace declares a
-  local function of the same name (importing the global one would be a
-  compile error); resolve such a spot by hand.
+  the import + short name. It also adds the import for unqualified calls of
+  the functions that are already imported somewhere in the psbits
+  extensions (the performance-relevant set, maintained as
+  `PERFORMANCE_FUNCTIONS` in the fixer) - when you import a new global
+  function in an extension, add its name to that list. Every other
+  unqualified call stays as it is: the house style does not import every
+  global function.
+- It leaves a call untouched when the file's namespace declares a local
+  function of the same name or the name is already function-imported
+  (importing the global one would be a compile error); resolve such a spot
+  by hand.
 - Tooling: `PSBits/function_imports` (php-cs-fixer).
 
 ### 8. Always use imports - and how to resolve a conflict
@@ -190,6 +197,17 @@ constructor follow the same principle ahead of the methods - see the
 - Tooling: `ordered_class_elements` (php-cs-fixer) plus
   `PSBits/class_block_separation` (one blank line between methods, meta
   separation for constants/properties).
+
+### 10. String concatenation has a space around the dot
+
+A concatenation is written with exactly one space on each side of the
+concatenation operator:
+
+```php
+$label = 'count: ' . count($ids);
+```
+
+- Tooling: `concat_space` (php-cs-fixer).
 
 ## The tooling
 

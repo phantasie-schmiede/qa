@@ -20,6 +20,12 @@ use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
 
 use function count;
+use function explode;
+use function str_contains;
+use function str_starts_with;
+use function strrpos;
+use function substr;
+use function trim;
 
 use const T_COMMENT;
 use const T_DOC_COMMENT;

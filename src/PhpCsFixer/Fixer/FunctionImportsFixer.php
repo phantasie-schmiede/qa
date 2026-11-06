@@ -24,18 +24,28 @@ use PhpCsFixer\Tokenizer\Processor\ImportProcessor;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
 
+use function array_keys;
+use function in_array;
+
 use const T_CLASS;
 use const T_ENUM;
 use const T_FUNCTION;
 use const T_INTERFACE;
 use const T_NEW;
 use const T_NS_SEPARATOR;
+use const T_NULLSAFE_OBJECT_OPERATOR;
+use const T_OBJECT_OPERATOR;
+use const T_PAAMAYIM_NEKUDOTAYIM;
 use const T_STRING;
 use const T_TRAIT;
 
 /**
  * Replaces fully qualified calls of global functions (\count(...)) with
  * the plain short name and imports the function (use function count;).
+ *
+ * Unqualified calls of the global functions listed in
+ * PERFORMANCE_FUNCTIONS (count(...)) get the import, too - the call
+ * itself stays as it is.
  *
  * The import is skipped when the file declares a local function of the
  * same name in the same namespace or when the function is already
@@ -54,6 +64,91 @@ use const T_TRAIT;
  */
 final class FunctionImportsFixer extends AbstractFixer implements WhitespacesAwareFixerInterface
 {
+    /**
+     * The global functions that carry a use function import somewhere in
+     * the psbits extensions: the house style treats them as
+     * performance-relevant, so an unqualified call of one of them gets
+     * the import, too. When an extension imports a new global function,
+     * add its name here.
+     *
+     * @var list<string>
+     */
+    private const array PERFORMANCE_FUNCTIONS = [
+        'array_filter',
+        'array_key_exists',
+        'array_key_first',
+        'array_key_last',
+        'array_keys',
+        'array_map',
+        'array_merge',
+        'array_replace_recursive',
+        'array_search',
+        'array_slice',
+        'array_unique',
+        'array_values',
+        'assert',
+        'basename',
+        'chmod',
+        'class_exists',
+        'clearstatcache',
+        'constant',
+        'count',
+        'define',
+        'defined',
+        'dirname',
+        'explode',
+        'file_get_contents',
+        'file_put_contents',
+        'function_exists',
+        'get_class',
+        'gettype',
+        'glob',
+        'implode',
+        'in_array',
+        'is_a',
+        'is_array',
+        'is_bool',
+        'is_dir',
+        'is_file',
+        'is_float',
+        'is_int',
+        'is_object',
+        'is_resource',
+        'is_scalar',
+        'is_string',
+        'json_decode',
+        'json_encode',
+        'ksort',
+        'lcfirst',
+        'ltrim',
+        'max',
+        'mb_strtolower',
+        'method_exists',
+        'mkdir',
+        'ob_get_clean',
+        'ob_start',
+        'pathinfo',
+        'rmdir',
+        'sort',
+        'sprintf',
+        'strcmp',
+        'str_contains',
+        'str_ends_with',
+        'strlen',
+        'str_repeat',
+        'str_replace',
+        'strrpos',
+        'str_starts_with',
+        'strtolower',
+        'substr',
+        'substr_count',
+        'sys_get_temp_dir',
+        'trim',
+        'uniqid',
+        'unlink',
+        'usort',
+    ];
+
     /**
      * Checks whether the namespace declares its own function with the given
      * name; adding a use function import for it would be a compile error.
@@ -177,15 +272,21 @@ final class FunctionImportsFixer extends AbstractFixer implements WhitespacesAwa
         return 30;
     }
 
+    /**
+     * Cheap pre-check on the token kinds: a file without any name token
+     * has no function call this fixer can touch.
+     */
     public function isCandidate(Tokens $tokens): bool
     {
-        return $tokens->isTokenKindFound(T_NS_SEPARATOR);
+        return $tokens->isTokenKindFound(T_STRING);
     }
 
     /**
      * Per namespace: collects the global function calls, empties their
      * leading backslashes (the name tokens stay - they just become short
-     * names), and inserts the missing use function imports.
+     * names), and inserts the missing use function imports. The
+     * unqualified calls of PERFORMANCE_FUNCTIONS keep their short name,
+     * they only get the import.
      */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {
@@ -197,10 +298,11 @@ final class FunctionImportsFixer extends AbstractFixer implements WhitespacesAwa
                 continue;
             }
 
-            $calls   = $this->findFunctionCalls($tokens, $namespace);
-            $uses    = $useAnalyzer->getDeclarationsInNamespace($tokens, $namespace, true);
-            $imports = [];
-            $lastUse = null;
+            $calls      = $this->findFunctionCalls($tokens, $namespace);
+            $shortCalls = $this->findUnqualifiedCalls($tokens, $namespace);
+            $uses       = $useAnalyzer->getDeclarationsInNamespace($tokens, $namespace, true);
+            $imports    = [];
+            $lastUse    = null;
 
             foreach ($uses as $use) {
                 $lastUse = $use;
@@ -208,6 +310,14 @@ final class FunctionImportsFixer extends AbstractFixer implements WhitespacesAwa
 
             foreach ($calls as $name) {
                 if ($this->isAlreadyImported($uses, $name)) {
+                    continue;
+                }
+
+                $imports[$name] = true;
+            }
+
+            foreach ($shortCalls as $name) {
+                if (isset($imports[$name]) || $this->isAlreadyImported($uses, $name)) {
                     continue;
                 }
 
@@ -275,6 +385,54 @@ final class FunctionImportsFixer extends AbstractFixer implements WhitespacesAwa
             }
 
             $name = $tokens[$nameIndex]->getContent();
+
+            if (self::declaresLocalFunction($tokens, $namespace, $name)) {
+                continue;
+            }
+
+            $calls[$index] = $name;
+        }
+
+        return $calls;
+    }
+
+    /**
+     * Collects the unqualified calls of the functions from
+     * PERFORMANCE_FUNCTIONS (count(...)). The neighbors exclude the
+     * other uses of a short name: preceded by T_NEW, T_FUNCTION, an
+     * object or scope operator, or a namespace separator it names a
+     * class or a member (new count(), function count(), $a->count(),
+     * NS\count()), and one not followed by ( is no call.
+     *
+     * @return array<int, string> token index of the name => function name
+     */
+    private function findUnqualifiedCalls(Tokens $tokens, NamespaceAnalysis $namespace): array
+    {
+        $calls = [];
+
+        for ($index = $namespace->getScopeStartIndex(); $index <= $namespace->getScopeEndIndex(); ++$index) {
+            $token = $tokens[$index];
+
+            if (!$token->isGivenKind(T_STRING) || !in_array($token->getContent(), self::PERFORMANCE_FUNCTIONS, true)) {
+                continue;
+            }
+
+            $next = $tokens->getNextMeaningfulToken($index);
+
+            if (null === $next || !$tokens[$next]->equals('(')) {
+                continue;
+            }
+
+            $prev = $tokens->getPrevMeaningfulToken($index);
+
+            if (
+                null !== $prev
+                && $tokens[$prev]->isGivenKind([T_FUNCTION, T_NEW, T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_PAAMAYIM_NEKUDOTAYIM, T_NS_SEPARATOR])
+            ) {
+                continue;
+            }
+
+            $name = $token->getContent();
 
             if (self::declaresLocalFunction($tokens, $namespace, $name)) {
                 continue;
