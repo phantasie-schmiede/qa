@@ -6,9 +6,6 @@ use PhpCsFixer\Tokenizer\Tokens;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\AlphabeticalArrayKeysFixer;
 
-/**
- * Class AlphabeticalArrayKeysFixerTest
- */
 final class AlphabeticalArrayKeysFixerTest extends TestCase
 {
     public function testFixIsIdempotent(): void

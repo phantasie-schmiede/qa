@@ -14,8 +14,6 @@ use TYPO3\CMS\Extbase\Mvc\ExtbaseRequestParameters;
 use TYPO3\CMS\Extbase\Mvc\Request;
 
 /**
- * Class FrontendRequestFactory
- *
  * Creates frontend requests with an initialized FrontendTypoScript, as the frontend request middlewares would.
  * The framework configuration of the extension under test is provided under its plugin key, and the extbase
  * request factory builds the request of a given controller action on top of it.

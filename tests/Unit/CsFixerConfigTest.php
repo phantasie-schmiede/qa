@@ -76,6 +76,7 @@ final class CsFixerConfigTest extends TestCase
         self::assertArrayHasKey('PSBits/alphabetical_array_keys', $rules);
         self::assertArrayHasKey('PSBits/block_comments', $rules);
         self::assertArrayHasKey('PSBits/class_block_separation', $rules);
+        self::assertArrayHasKey('PSBits/class_phpdoc_cleanup', $rules);
         self::assertArrayHasKey('PSBits/empty_comments', $rules);
         self::assertArrayHasKey('PSBits/function_imports', $rules);
         self::assertArrayHasKey('PSBits/property_names_alignment', $rules);

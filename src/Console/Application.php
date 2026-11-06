@@ -24,11 +24,6 @@ use function strlen;
 use function substr;
 use function unlink;
 
-/**
- * Class Application
- *
- * @package PSBits\Qa\Console
- */
 final class Application
 {
     /** @var string[] shared skills installed as symlinks by qa link */
