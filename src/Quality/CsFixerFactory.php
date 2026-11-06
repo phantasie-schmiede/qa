@@ -9,6 +9,7 @@ use PhpCsFixer\Finder;
 use PSBits\Qa\PhpCsFixer\Fixer\AlphabeticalArrayKeysFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\BlockCommentsFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\ClassBlockSeparationFixer;
+use PSBits\Qa\PhpCsFixer\Fixer\ClassPhpdocCleanupFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\EmptyCommentsFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\FunctionImportsFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\PropertyNamesAlignmentFixer;
@@ -71,6 +72,7 @@ final class CsFixerFactory
                 new AlphabeticalArrayKeysFixer(),
                 new BlockCommentsFixer(),
                 new ClassBlockSeparationFixer(),
+                new ClassPhpdocCleanupFixer(),
                 new EmptyCommentsFixer(),
                 new FunctionImportsFixer(),
                 new PropertyNamesAlignmentFixer(),
@@ -190,6 +192,7 @@ final class CsFixerFactory
                         'trait_import' => 'only_if_meta',
                     ],
                 ],
+                'PSBits/class_phpdoc_cleanup'     => true,
                 'PSBits/empty_comments'           => true,
                 'PSBits/function_imports'         => true,
                 'PSBits/property_names_alignment' => true,

@@ -11,8 +11,6 @@ use function array_values;
 use function get_class;
 
 /**
- * Class InMemoryListenerProvider
- *
  * PSR-14 listener provider with listeners registered at runtime, for use with the core EventDispatcher in
  * unit and functional tests.
  */

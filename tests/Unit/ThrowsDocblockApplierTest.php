@@ -5,9 +5,6 @@ declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Quality\ThrowsDocblockApplier;
 
-/**
- * Class ThrowsDocblockApplierTest
- */
 final class ThrowsDocblockApplierTest extends TestCase
 {
     private string $root;
