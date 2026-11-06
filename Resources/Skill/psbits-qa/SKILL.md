@@ -53,11 +53,14 @@ repository are added:
 
 - `analyze:php` (PHPStan, needs `Build/Quality/phpstan.neon.dist`)
 - `audit:composer`, `validate:composer` (always)
+- `lint:composer` / `fix:composer` (always; the `ergebnis/composer-normalize`
+  plugin normalizes the `composer.json` key order and formatting)
 - `lint:php` / `fix:php` (PHP-CS-Fixer, needs
   `Build/Quality/.php-cs-fixer.dist.php`)
 - `lint:classes` / `fix:classes`, `lint:htmlxml` / `fix:htmlxml`,
-  `lint:js`, `lint:scss` (npm proxies, need the matching npm script in the
-  repository `package.json`)
+  `lint:json` / `fix:json`, `lint:js`, `lint:scss` (npm proxies, need the
+  matching npm script in the repository `package.json`; the json pair runs
+  Prettier on `package.json`)
 - `lint:typoscript` (needs at least one `.typoscript` file below
   `Configuration/TypoScript`)
 - `lint:yaml` (needs the `Configuration` directory)
@@ -73,9 +76,9 @@ psbits/crafter where applicable).
 - Existing script entries and aggregate members are never modified. An
   aggregate deviating from the expected standard is reported with the
   standard printed in the output - align it manually and commit. The
-  standard order of `fix:all` is `fix:classes`, `fix:htmlxml`, `fix:throws`,
-  `fix:xlf`, `fix:php` (the php-cs-fixer run last, normalizing what the
-  other fixers wrote); `lint:all` is alphabetical.
+  standard order of `fix:all` is `fix:classes`, `fix:composer`, `fix:htmlxml`,
+  `fix:json`, `fix:throws`, `fix:xlf`, `fix:php` (the php-cs-fixer run last,
+  normalizing what the other fixers wrote); `lint:all` is alphabetical.
 - `bin/qa check` enforces the same in the CI (missing scripts, missing
   aggregates and aggregate deviations all fail the gate).
 

@@ -147,7 +147,7 @@ final class ApplicationTest extends TestCase
         self::assertSame(['@analyze:php', '@audit:composer', '@lint:php', '@validate:composer'], $scripts['lint:all']);
         self::assertSame(['@fix:php'], $scripts['fix:all']);
         self::assertStringContainsString('hint: lint:all deviates from the expected standard', $output);
-        self::assertStringContainsString('missing: @lint:xlf', $output);
+        self::assertStringContainsString('missing: @lint:composer, @lint:xlf', $output);
     }
 
     public function testLinkCreatesMissingAggregatesWithTheStandard(): void
@@ -160,7 +160,7 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'link']));
 
         $scripts = $this->composerScripts();
-        self::assertSame(['@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
+        self::assertSame(['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
     }
 
@@ -265,8 +265,8 @@ final class ApplicationTest extends TestCase
 
         // The maintainer aligns the aggregates with the reported standard.
         $scripts = $this->composerScripts();
-        $scripts['lint:all'] = ['@analyze:php', '@audit:composer', '@lint:php', '@lint:xlf', '@validate:composer'];
-        $scripts['fix:all']  = ['@fix:throws', '@fix:xlf', '@fix:php'];
+        $scripts['lint:all'] = ['@analyze:php', '@audit:composer', '@lint:composer', '@lint:php', '@lint:xlf', '@validate:composer'];
+        $scripts['fix:all']  = ['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'];
         $this->writeRepositoryFixtures($scripts);
 
         self::assertSame(0, Application::execute(['qa', 'check']));
@@ -275,7 +275,7 @@ final class ApplicationTest extends TestCase
     public function testLinkAddsCompleteToolchainToCompleteRepository(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
-        $this->writeNpmScripts(['fix:classes', 'fix:htmlxml', 'lint:classes', 'lint:htmlxml']);
+        $this->writeNpmScripts(['fix:classes', 'fix:htmlxml', 'fix:json', 'lint:classes', 'lint:htmlxml', 'lint:json']);
         $this->writeConfiguration();
         $this->writeCsFixerShim();
         chdir($this->root);
@@ -286,25 +286,29 @@ final class ApplicationTest extends TestCase
 
         foreach (
             [
-                'analyze:php', 'audit:composer', 'fix:classes', 'fix:htmlxml', 'fix:php', 'fix:throws',
-                'fix:xlf', 'lint:classes', 'lint:htmlxml', 'lint:php', 'lint:typoscript', 'lint:xlf',
-                'lint:yaml', 'validate:composer',
+                'analyze:php', 'audit:composer', 'fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json',
+                'fix:php', 'fix:throws', 'fix:xlf', 'lint:classes', 'lint:composer', 'lint:htmlxml',
+                'lint:json', 'lint:php', 'lint:typoscript', 'lint:xlf', 'lint:yaml', 'validate:composer',
             ] as $name
         ) {
             self::assertArrayHasKey($name, $scripts);
         }
         self::assertSame('npm run lint:classes', $scripts['lint:classes']);
         self::assertSame('npm run fix:htmlxml', $scripts['fix:htmlxml']);
+        self::assertSame('composer normalize', $scripts['fix:composer']);
+        self::assertSame('composer normalize --dry-run --diff --no-check-lock --no-update-lock', $scripts['lint:composer']);
+        self::assertSame('npm run fix:json', $scripts['fix:json']);
+        self::assertSame('npm run lint:json', $scripts['lint:json']);
         self::assertSame(
             'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript',
             $scripts['lint:typoscript'],
         );
         self::assertSame('yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', $scripts['lint:yaml']);
         self::assertSame(
-            ['@analyze:php', '@audit:composer', '@lint:classes', '@lint:htmlxml', '@lint:php', '@lint:typoscript', '@lint:xlf', '@lint:yaml', '@validate:composer'],
+            ['@analyze:php', '@audit:composer', '@lint:classes', '@lint:composer', '@lint:htmlxml', '@lint:json', '@lint:php', '@lint:typoscript', '@lint:xlf', '@lint:yaml', '@validate:composer'],
             $scripts['lint:all'],
         );
-        self::assertSame(['@fix:classes', '@fix:htmlxml', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
+        self::assertSame(['@fix:classes', '@fix:composer', '@fix:htmlxml', '@fix:json', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
@@ -312,13 +316,14 @@ final class ApplicationTest extends TestCase
     public function testLinkAppliesNpmScriptConditionsPerPackageJson(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
-        $this->writeNpmScripts(['lint:js', 'lint:scss']);
+        $this->writeNpmScripts(['fix:json', 'lint:js', 'lint:json', 'lint:scss']);
         chdir($this->root);
 
         $this->link();
 
         $scripts = $this->composerScripts();
         self::assertSame('npm run lint:js', $scripts['lint:js']);
+        self::assertSame('npm run lint:json', $scripts['lint:json']);
         self::assertSame('npm run lint:scss', $scripts['lint:scss']);
         self::assertArrayNotHasKey('lint:classes', $scripts);
         self::assertArrayNotHasKey('fix:classes', $scripts);
@@ -326,7 +331,8 @@ final class ApplicationTest extends TestCase
         self::assertArrayNotHasKey('fix:htmlxml', $scripts);
         self::assertArrayNotHasKey('fix:throws', $scripts);
         self::assertArrayNotHasKey('lint:xlf', $scripts);
-        self::assertSame(['@audit:composer', '@lint:js', '@lint:scss', '@validate:composer'], $scripts['lint:all']);
+        self::assertSame(['@audit:composer', '@lint:composer', '@lint:js', '@lint:json', '@lint:scss', '@validate:composer'], $scripts['lint:all']);
+        self::assertSame(['@fix:composer', '@fix:json'], $scripts['fix:all']);
     }
 
     public function testLinkSkipsTyposcriptScriptForEmptyTyposcriptDirectory(): void
@@ -351,6 +357,8 @@ final class ApplicationTest extends TestCase
 
         $scripts = $this->composerScripts();
         self::assertSame('composer audit --abandoned=report', $scripts['audit:composer']);
+        self::assertSame('composer normalize --dry-run --diff --no-check-lock --no-update-lock', $scripts['lint:composer']);
+        self::assertSame('composer normalize', $scripts['fix:composer']);
         self::assertSame('composer validate --no-check-publish', $scripts['validate:composer']);
         self::assertArrayNotHasKey('analyze:php', $scripts);
         self::assertArrayNotHasKey('lint:php', $scripts);
@@ -360,8 +368,10 @@ final class ApplicationTest extends TestCase
         self::assertArrayNotHasKey('lint:yaml', $scripts);
         self::assertArrayNotHasKey('lint:typoscript', $scripts);
         self::assertArrayNotHasKey('lint:classes', $scripts);
-        self::assertSame(['@audit:composer', '@validate:composer'], $scripts['lint:all']);
-        self::assertSame([], $scripts['fix:all']);
+        self::assertArrayNotHasKey('lint:json', $scripts);
+        self::assertArrayNotHasKey('fix:json', $scripts);
+        self::assertSame(['@audit:composer', '@lint:composer', '@validate:composer'], $scripts['lint:all']);
+        self::assertSame(['@fix:composer'], $scripts['fix:all']);
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
     }
 

@@ -66,13 +66,17 @@ final class Application
         ['name' => 'analyze:php', 'command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan'],
         ['name' => 'audit:composer', 'command' => 'composer audit --abandoned=report', 'condition' => 'always'],
         ['name' => 'fix:classes', 'command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes'],
+        ['name' => 'fix:composer', 'command' => 'composer normalize', 'condition' => 'always'],
         ['name' => 'fix:htmlxml', 'command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml'],
+        ['name' => 'fix:json', 'command' => 'npm run fix:json', 'condition' => 'npm:fix:json'],
         ['name' => 'fix:php', 'command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose', 'condition' => 'csfixer'],
         ['name' => 'fix:throws', 'command' => '.Build/bin/qa throws-fix', 'condition' => 'phpstan'],
         ['name' => 'fix:xlf', 'command' => '.Build/bin/qa xlf-fix', 'condition' => 'xlf'],
         ['name' => 'lint:classes', 'command' => 'npm run lint:classes', 'condition' => 'npm:lint:classes'],
+        ['name' => 'lint:composer', 'command' => 'composer normalize --dry-run --diff --no-check-lock --no-update-lock', 'condition' => 'always'],
         ['name' => 'lint:htmlxml', 'command' => 'npm run lint:htmlxml', 'condition' => 'npm:lint:htmlxml'],
         ['name' => 'lint:js', 'command' => 'npm run lint:js', 'condition' => 'npm:lint:js'],
+        ['name' => 'lint:json', 'command' => 'npm run lint:json', 'condition' => 'npm:lint:json'],
         ['name' => 'lint:php', 'command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose', 'condition' => 'csfixer'],
         ['name' => 'lint:scss', 'command' => 'npm run lint:scss', 'condition' => 'npm:lint:scss'],
         ['name' => 'lint:typoscript', 'command' => 'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript', 'condition' => 'typoscript'],
@@ -97,7 +101,7 @@ final class Application
      *
      * @var list<string>
      */
-    private const array FIX_ALL_ORDER = ['fix:classes', 'fix:htmlxml', 'fix:throws', 'fix:xlf', 'fix:php'];
+    private const array FIX_ALL_ORDER = ['fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json', 'fix:throws', 'fix:xlf', 'fix:php'];
 
     private const string USAGE = <<<text
     Usage:

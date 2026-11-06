@@ -100,7 +100,11 @@ public function resolve(array $ids): array
   (php-cs-fixer). Arrays with dynamic keys or side-effect-carrying values are
   left alone by the tooling - do not reorder them by hand either.
 - **JSON keys**: same order as array keys (JSON that lives in PHP files is an
-  array; in standalone `.json` files apply the same rule when writing).
+  array; in standalone `.json` files apply the same rule when writing) - with
+  two tool-managed exceptions: `composer.json` follows the canonical key order
+  of `ergebnis/composer-normalize` (`lint:composer` / `fix:composer`), and
+  `package.json` carries the Prettier format (2-space indentation, the key
+  order as generated).
 - **XLIFF `trans-unit` ids**: within each `<body>` the `<trans-unit>` elements
   are sorted by `id` (case-insensitive). Tooling: `composer fix:xlf`
   (`.Build/bin/qa xlf-fix`) rewrites, `composer lint:xlf`
@@ -261,11 +265,13 @@ in the repository (see the `psbits-qa` skill for the layout):
   baseline incl. the `psbits.throwsDocblock` rule), `lint:xlf`, the php-cs-fixer
   dry-run with all the `PSBits/*` fixers, yaml/typoscript/class linters.
 - `composer fix:all` - applies the fixes in this order: `fix:classes`,
-  `fix:htmlxml`, `fix:throws` (the @throws cascade loop, which writes short
-  names + the missing `use` statements itself), `fix:xlf`, `fix:php` (the
-  php-cs-fixer run; its `PSBits/empty_comments` drops the empty docblock
-  shells and its `PSBits/function_imports` converts any backslash-prefixed
-  global function call into a `use function` import).
+  `fix:composer` (the composer.json normalization), `fix:htmlxml`,
+  `fix:json` (Prettier for the package.json), `fix:throws` (the @throws
+  cascade loop, which writes short names + the missing `use` statements
+  itself), `fix:xlf`, `fix:php` (the php-cs-fixer run; its
+  `PSBits/empty_comments` drops the empty docblock shells and its
+  `PSBits/function_imports` converts any backslash-prefixed global function
+  call into a `use function` import).
 - `composer fix:throws` / `composer lint:xlf` / `composer fix:xlf` - the
   individual new commands (`.Build/bin/qa throws-fix|check|fix`).
 - After `fix:all`, always run `lint:all` and the test suites; a green
