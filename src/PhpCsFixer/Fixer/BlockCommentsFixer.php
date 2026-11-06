@@ -19,6 +19,14 @@ use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
 
+use function array_map;
+use function implode;
+use function str_contains;
+use function str_starts_with;
+use function strrpos;
+use function substr;
+use function substr_count;
+
 use const T_COMMENT;
 use const T_OPEN_TAG;
 use const T_WHITESPACE;
@@ -107,10 +115,10 @@ final class BlockCommentsFixer extends AbstractFixer
                 $lines[] = rtrim($text);
             }
 
-            $comment = "/*\n".implode("\n", array_map(
-                static fn(string $line): string => $indent.' *'.('' === $line ? '' : ' '.$line),
+            $comment = "/*\n" . implode("\n", array_map(
+                static fn(string $line): string => $indent . ' *' . ('' === $line ? '' : ' ' . $line),
                 $lines,
-            ))."\n".$indent.' */';
+            )) . "\n" . $indent . ' */';
 
             $tokens->overrideRange($start, $end, [new Token([T_COMMENT, $comment])]);
         }

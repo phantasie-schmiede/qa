@@ -46,12 +46,41 @@ final class TypedConstantFixerTest extends TestCase
 
             class Demo
             {
-                const LIST = [1, 2];
+                const EXPRESSION = [1, 2] + [3];
+                const ACCESS = [1][0];
+                const LONG = array(1, 2);
                 const MIXED = 1, OTHER = 'x';
             }
             php;
 
         self::assertSame($code, $this->fix(new TypedConstantFixer(), $code));
+    }
+
+    public function testTypesArrayLiteralConstants(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            class Demo
+            {
+                const LIST = [1, 2];
+                const NESTED = [1, ['a', 2]];
+                const EMPTY = [];
+                const PAIRED = [], OTHER = [1];
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            class Demo
+            {
+                const array LIST = [1, 2];
+                const array NESTED = [1, ['a', 2]];
+                const array EMPTY = [];
+                const array PAIRED = [], OTHER = [1];
+            }
+            php, $this->fix(new TypedConstantFixer(), $code));
     }
 
     public function testTypesConstantsWithInferredScalarTypes(): void

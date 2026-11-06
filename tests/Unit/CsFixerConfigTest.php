@@ -80,6 +80,7 @@ final class CsFixerConfigTest extends TestCase
         self::assertArrayHasKey('PSBits/function_imports', $rules);
         self::assertArrayHasKey('PSBits/property_names_alignment', $rules);
         self::assertArrayHasKey('PSBits/typed_constant', $rules);
+        self::assertArrayHasKey('concat_space', $rules);
         self::assertArrayNotHasKey('native_function_invocation', $rules);
 
         $files = [];

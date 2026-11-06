@@ -13,6 +13,8 @@ use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
 use TYPO3\CMS\Core\Localization\Locale;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function method_exists;
+
 /**
  * Trait LanguageStackSeeder
  *

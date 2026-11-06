@@ -22,9 +22,16 @@ use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
 
+use function array_map;
+use function array_merge;
 use function count;
 use function in_array;
+use function ltrim;
+use function str_contains;
 use function strlen;
+use function strrpos;
+use function substr;
+use function usort;
 
 use const T_CLASS;
 use const T_CURLY_OPEN;
@@ -277,7 +284,7 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         $newTokens = [];
 
         if (true === $multiLine) {
-            $newTokens = [new Token([T_WHITESPACE, "\n".$this->getLineIndent($tokens, $sortedItems[0]['first'])])];
+            $newTokens = [new Token([T_WHITESPACE, "\n" . $this->getLineIndent($tokens, $sortedItems[0]['first'])])];
         } else {
             $newTokens = $this->getSurroundingWhitespace($tokens, $open);
         }
@@ -292,10 +299,10 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
 
                 if ($index === count($sortedItems) - 1) {
                     // the closing bracket stands on its own line at the array's indent
-                    $newTokens[] = new Token([T_WHITESPACE, "\n".$this->getLineIndent($tokens, $open)]);
+                    $newTokens[] = new Token([T_WHITESPACE, "\n" . $this->getLineIndent($tokens, $open)]);
                 } else {
                     $next        = $sortedItems[$index + 1];
-                    $newTokens[] = new Token([T_WHITESPACE, "\n".$this->getLineIndent($tokens, $next['first'])]);
+                    $newTokens[] = new Token([T_WHITESPACE, "\n" . $this->getLineIndent($tokens, $next['first'])]);
                 }
             } elseif ($index < count($sortedItems) - 1) {
                 $newTokens[] = new Token([T_WHITESPACE, ', ']);
@@ -387,12 +394,12 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
             $position = strrpos($content, "\n");
 
             if (false !== $position) {
-                $buffer = substr($content, $position + 1).$buffer;
+                $buffer = substr($content, $position + 1) . $buffer;
 
                 break;
             }
 
-            $buffer = $content.$buffer;
+            $buffer = $content . $buffer;
             --$i;
         }
 

@@ -14,7 +14,13 @@ use PSBits\Qa\PhpCsFixer\Fixer\FunctionImportsFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\PropertyNamesAlignmentFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\TypedConstantFixer;
 
+use function array_filter;
+use function array_map;
+use function array_values;
+use function is_dir;
+use function str_starts_with;
 use function strlen;
+use function substr;
 
 /**
  * Builds the shared php-cs-fixer configuration for a PSBits extension.
@@ -99,6 +105,7 @@ final class CsFixerFactory
                         'while',
                     ],
                 ],
+                'concat_space'                    => ['spacing' => 'one'],
                 'declare_strict_types'            => true,
                 'fully_qualified_strict_types'    => [
                     'import_symbols' => true,

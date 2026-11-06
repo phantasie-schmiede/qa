@@ -8,9 +8,15 @@ use PSBits\Qa\PhpStan\ThrowsDocblockRule;
 
 use function array_slice;
 use function count;
+use function implode;
 use function is_array;
+use function is_file;
 use function is_resource;
+use function json_decode;
 use function sprintf;
+use function str_starts_with;
+use function substr;
+use function trim;
 
 /**
  * Runs the PHPStan analysis and rewrites the @throws docblocks until the

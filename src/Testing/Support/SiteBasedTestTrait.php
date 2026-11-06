@@ -7,10 +7,13 @@ namespace PSBits\Qa\Testing\Support;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
+use function file_put_contents;
 use function is_array;
 use function is_bool;
 use function is_float;
 use function is_int;
+use function str_repeat;
+use function str_replace;
 
 /**
  * Trait SiteBasedTestTrait

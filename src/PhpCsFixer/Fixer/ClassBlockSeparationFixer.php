@@ -40,6 +40,10 @@ use function gettype;
 use function in_array;
 use function is_object;
 use function sprintf;
+use function str_contains;
+use function str_repeat;
+use function substr_count;
+
 use const T_WHITESPACE;
 
 /**
@@ -160,7 +164,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
                                 sprintf(
                                     'Unexpected element type, expected any of %s, got "%s".',
                                     Utils::naturalLanguageJoin($supportedTypes),
-                                    gettype($type).'#'.$type,
+                                    gettype($type) . '#' . $type,
                                 ),
                             );
                         }
@@ -173,7 +177,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
                                     'Unexpected spacing for element type "%s", expected any of %s, got "%s".',
                                     $spacing,
                                     Utils::naturalLanguageJoin($supportedSpacings),
-                                    is_object($spacing) ? get_class($spacing) : (null === $spacing ? 'null' : gettype($spacing).'#'.$spacing),
+                                    is_object($spacing) ? get_class($spacing) : (null === $spacing ? 'null' : gettype($spacing) . '#' . $spacing),
                                 ),
                             );
                         }
@@ -214,7 +218,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         if ($lineBreakCount < $reqLineCount) {
             $tokens[$startIndex] = new Token([
                 T_WHITESPACE,
-                str_repeat($lineEnding, $reqLineCount - $lineBreakCount).$tokens[$startIndex]->getContent(),
+                str_repeat($lineEnding, $reqLineCount - $lineBreakCount) . $tokens[$startIndex]->getContent(),
             ]);
 
             return;
