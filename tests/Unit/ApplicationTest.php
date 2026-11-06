@@ -8,6 +8,28 @@ use Random\RandomException;
 
 final class ApplicationTest extends TestCase
 {
+    private const array MINIMAL_SCRIPTS = [
+        'post-install-cmd' => ['.Build/bin/qa link'],
+        'post-update-cmd'  => ['.Build/bin/qa link'],
+        'test:all'         => ['@test:unit'],
+        'test:unit'        => 'phpunit',
+    ];
+
+    private const array BASE_SCRIPTS = [
+        'analyze:php'       => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress',
+        'audit:composer'    => 'composer audit --abandoned=report',
+        'fix:all'           => ['@fix:php'],
+        'fix:php'           => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose',
+        'lint:all'          => ['@analyze:php', '@audit:composer', '@lint:php', '@validate:composer'],
+        'lint:php'          => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose',
+        'post-install-cmd'  => ['.Build/bin/qa link'],
+        'post-update-cmd'   => ['.Build/bin/qa link'],
+        'qa'                => ['@fix:all', '@lint:all', '@test:all'],
+        'test:all'          => ['@test:unit'],
+        'test:unit'         => 'phpunit',
+        'validate:composer' => 'composer validate --no-check-publish',
+    ];
+
     private string $root;
 
     /**
@@ -109,6 +131,347 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'link']));
         self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
         self::assertSame(0, Application::execute(['qa', 'check']));
+    }
+
+    public function testLinkAddsSharedScriptsWithoutTouchingExistingAggregates(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+
+        $output = $this->link();
+
+        $scripts = $this->composerScripts();
+        self::assertSame('.Build/bin/qa xlf-check', $scripts['lint:xlf']);
+        self::assertSame('.Build/bin/qa xlf-fix', $scripts['fix:xlf']);
+        self::assertSame('.Build/bin/qa throws-fix', $scripts['fix:throws']);
+        self::assertSame(['@analyze:php', '@audit:composer', '@lint:php', '@validate:composer'], $scripts['lint:all']);
+        self::assertSame(['@fix:php'], $scripts['fix:all']);
+        self::assertStringContainsString('hint: lint:all deviates from the expected standard', $output);
+        self::assertStringContainsString('missing: @lint:xlf', $output);
+    }
+
+    public function testLinkCreatesMissingAggregatesWithTheStandard(): void
+    {
+        $scripts = self::BASE_SCRIPTS;
+        unset($scripts['fix:all'], $scripts['qa']);
+        $this->writeRepositoryFixtures($scripts);
+        chdir($this->root);
+
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        $scripts = $this->composerScripts();
+        self::assertSame(['@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
+        self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
+    }
+
+    public function testLinkIsIdempotent(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+
+        self::assertSame(0, Application::execute(['qa', 'link']));
+        $first = (string) file_get_contents($this->root . '/composer.json');
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        self::assertSame($first, (string) file_get_contents($this->root . '/composer.json'));
+    }
+
+    public function testLinkSkipsSharedScriptsOfUnapplicableRepositories(): void
+    {
+        $this->writeRepositoryFixtures(self::BASE_SCRIPTS, withXlf: false);
+        chdir($this->root);
+
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        $scripts = $this->composerScripts();
+        self::assertArrayNotHasKey('lint:xlf', $scripts);
+        self::assertArrayNotHasKey('fix:xlf', $scripts);
+        self::assertArrayHasKey('fix:throws', $scripts);
+    }
+
+    public function testLinkKeepsCustomScriptEntriesAndReportsTheirDeviation(): void
+    {
+        $scripts = self::BASE_SCRIPTS;
+        $scripts['lint:all'] = [
+            '@analyze:php',
+            "composer audit --abandoned=report || echo 'Warning: audit reported findings'",
+            '@lint:php',
+            '@validate:composer',
+        ];
+        $scripts['lint:yaml'] = 'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Build/Quality Configuration';
+        $this->writeRepositoryFixtures($scripts);
+        chdir($this->root);
+
+        $output = $this->link();
+
+        $scripts = $this->composerScripts();
+        self::assertSame(
+            'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Build/Quality Configuration',
+            $scripts['lint:yaml'],
+        );
+        self::assertSame(
+            [
+                '@analyze:php',
+                "composer audit --abandoned=report || echo 'Warning: audit reported findings'",
+                '@lint:php',
+                '@validate:composer',
+            ],
+            $scripts['lint:all'],
+        );
+        self::assertStringContainsString('hint: lint:all deviates from the expected standard', $output);
+        self::assertStringContainsString('missing: @audit:composer', $output);
+        self::assertStringContainsString("extra: composer audit --abandoned=report || echo 'Warning: audit reported findings'", $output);
+        self::assertStringContainsString('@lint:yaml', $output);
+    }
+
+    public function testCheckFailsOnMissingSharedScript(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        $scripts = $this->composerScripts();
+        unset($scripts['lint:xlf']);
+        $this->writeRepositoryFixtures($scripts);
+
+        [$exit, $output] = $this->check();
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: script lint:xlf missing (run qa link and commit)', $output);
+    }
+
+    public function testCheckFailsOnAggregateDeviation(): void
+    {
+        $scripts = self::BASE_SCRIPTS;
+        $scripts['fix:throws'] = '.Build/bin/qa throws-fix';
+        $scripts['fix:xlf']    = '.Build/bin/qa xlf-fix';
+        $scripts['lint:xlf']   = '.Build/bin/qa xlf-check';
+        $this->writeRepositoryFixtures($scripts);
+        chdir($this->root);
+
+        [$exit, $output] = $this->check();
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: lint:all deviates from the expected standard', $output);
+        self::assertStringContainsString('missing: @lint:xlf', $output);
+        self::assertStringContainsString('"lint:all": [', $output);
+    }
+
+    public function testCheckPassesAfterLinkAndAlignedAggregates(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        // The maintainer aligns the aggregates with the reported standard.
+        $scripts = $this->composerScripts();
+        $scripts['lint:all'] = ['@analyze:php', '@audit:composer', '@lint:php', '@lint:xlf', '@validate:composer'];
+        $scripts['fix:all']  = ['@fix:throws', '@fix:xlf', '@fix:php'];
+        $this->writeRepositoryFixtures($scripts);
+
+        self::assertSame(0, Application::execute(['qa', 'check']));
+    }
+
+    public function testLinkAddsCompleteToolchainToCompleteRepository(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
+        $this->writeNpmScripts(['fix:classes', 'fix:htmlxml', 'lint:classes', 'lint:htmlxml']);
+        $this->writeConfiguration();
+        $this->writeCsFixerShim();
+        chdir($this->root);
+
+        $this->link();
+
+        $scripts = $this->composerScripts();
+
+        foreach (
+            [
+                'analyze:php', 'audit:composer', 'fix:classes', 'fix:htmlxml', 'fix:php', 'fix:throws',
+                'fix:xlf', 'lint:classes', 'lint:htmlxml', 'lint:php', 'lint:typoscript', 'lint:xlf',
+                'lint:yaml', 'validate:composer',
+            ] as $name
+        ) {
+            self::assertArrayHasKey($name, $scripts);
+        }
+        self::assertSame('npm run lint:classes', $scripts['lint:classes']);
+        self::assertSame('npm run fix:htmlxml', $scripts['fix:htmlxml']);
+        self::assertSame(
+            'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript',
+            $scripts['lint:typoscript'],
+        );
+        self::assertSame('yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', $scripts['lint:yaml']);
+        self::assertSame(
+            ['@analyze:php', '@audit:composer', '@lint:classes', '@lint:htmlxml', '@lint:php', '@lint:typoscript', '@lint:xlf', '@lint:yaml', '@validate:composer'],
+            $scripts['lint:all'],
+        );
+        self::assertSame(['@fix:classes', '@fix:htmlxml', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
+        self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
+        self::assertSame(0, Application::execute(['qa', 'check']));
+    }
+
+    public function testLinkAppliesNpmScriptConditionsPerPackageJson(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
+        $this->writeNpmScripts(['lint:js', 'lint:scss']);
+        chdir($this->root);
+
+        $this->link();
+
+        $scripts = $this->composerScripts();
+        self::assertSame('npm run lint:js', $scripts['lint:js']);
+        self::assertSame('npm run lint:scss', $scripts['lint:scss']);
+        self::assertArrayNotHasKey('lint:classes', $scripts);
+        self::assertArrayNotHasKey('fix:classes', $scripts);
+        self::assertArrayNotHasKey('lint:htmlxml', $scripts);
+        self::assertArrayNotHasKey('fix:htmlxml', $scripts);
+        self::assertArrayNotHasKey('fix:throws', $scripts);
+        self::assertArrayNotHasKey('lint:xlf', $scripts);
+        self::assertSame(['@audit:composer', '@lint:js', '@lint:scss', '@validate:composer'], $scripts['lint:all']);
+    }
+
+    public function testLinkSkipsTyposcriptScriptForEmptyTyposcriptDirectory(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
+        mkdir($this->root . '/Configuration/TypoScript', 0755, true);
+        chdir($this->root);
+
+        $this->link();
+
+        $scripts = $this->composerScripts();
+        self::assertArrayNotHasKey('lint:typoscript', $scripts);
+        self::assertArrayHasKey('lint:yaml', $scripts);
+    }
+
+    public function testLinkAddsOnlyAlwaysScriptsToBareRepository(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
+        chdir($this->root);
+
+        $this->link();
+
+        $scripts = $this->composerScripts();
+        self::assertSame('composer audit --abandoned=report', $scripts['audit:composer']);
+        self::assertSame('composer validate --no-check-publish', $scripts['validate:composer']);
+        self::assertArrayNotHasKey('analyze:php', $scripts);
+        self::assertArrayNotHasKey('lint:php', $scripts);
+        self::assertArrayNotHasKey('fix:php', $scripts);
+        self::assertArrayNotHasKey('fix:throws', $scripts);
+        self::assertArrayNotHasKey('lint:xlf', $scripts);
+        self::assertArrayNotHasKey('lint:yaml', $scripts);
+        self::assertArrayNotHasKey('lint:typoscript', $scripts);
+        self::assertArrayNotHasKey('lint:classes', $scripts);
+        self::assertSame(['@audit:composer', '@validate:composer'], $scripts['lint:all']);
+        self::assertSame([], $scripts['fix:all']);
+        self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
+    }
+
+    public function testCheckFailsOnMissingToolingScript(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
+        $this->writeConfiguration();
+        $this->writeCsFixerShim();
+        chdir($this->root);
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        $scripts = $this->composerScripts();
+        unset($scripts['lint:typoscript']);
+        $this->writeRepositoryFixtures($scripts);
+
+        [$exit, $output] = $this->check();
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: script lint:typoscript missing (run qa link and commit)', $output);
+    }
+
+    /**
+     * @return array{0: int, 1: string}
+     */
+    private function check(): array
+    {
+        ob_start();
+        $exit = Application::execute(['qa', 'check']);
+
+        return [$exit, (string) ob_get_clean()];
+    }
+
+    private function link(): string
+    {
+        ob_start();
+        self::assertSame(0, Application::execute(['qa', 'link']));
+
+        return (string) ob_get_clean();
+    }
+
+    /**
+     * @param array<string, array|string> $scripts
+     */
+    private function writeRepositoryFixtures(array $scripts = self::BASE_SCRIPTS, bool $withXlf = true, bool $withPhpstan = true): void
+    {
+        $data = ['name' => 'fixture-extension', 'scripts' => $scripts];
+        file_put_contents(
+            $this->root . '/composer.json',
+            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+        );
+
+        if ($withXlf) {
+            $languageDir = $this->root . '/Resources/Private/Language';
+
+            if (!is_dir($languageDir)) {
+                mkdir($languageDir, 0755, true);
+            }
+
+            file_put_contents($languageDir . '/locallang.xlf', '');
+        }
+
+        if ($withPhpstan) {
+            $qualityDir = $this->root . '/Build/Quality';
+
+            if (!is_dir($qualityDir)) {
+                mkdir($qualityDir, 0755, true);
+            }
+
+            file_put_contents($qualityDir . '/phpstan.neon.dist', "# fixture\n");
+        }
+    }
+
+    /**
+     * @param list<string> $scripts
+     */
+    private function writeNpmScripts(array $scripts): void
+    {
+        $data = ['name' => 'fixture-extension', 'scripts' => array_fill_keys($scripts, 'echo ok')];
+        file_put_contents(
+            $this->root . '/package.json',
+            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+        );
+    }
+
+    private function writeConfiguration(): void
+    {
+        $typoscriptDir = $this->root . '/Configuration/TypoScript';
+        mkdir($typoscriptDir, 0755, true);
+        file_put_contents($typoscriptDir . '/setup.typoscript', "page = DIV\n");
+    }
+
+    private function writeCsFixerShim(): void
+    {
+        $qualityDir = $this->root . '/Build/Quality';
+
+        if (!is_dir($qualityDir)) {
+            mkdir($qualityDir, 0755, true);
+        }
+
+        file_put_contents($qualityDir . '/.php-cs-fixer.dist.php', "<?php\nreturn [];\n");
+    }
+
+    /**
+     * @return array<string, array|string>
+     */
+    private function composerScripts(): array
+    {
+        $data = json_decode((string) file_get_contents($this->root . '/composer.json'), true);
+
+        return $data['scripts'];
     }
 
     private function removeTree(string $path): void

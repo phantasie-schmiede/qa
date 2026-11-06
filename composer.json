@@ -13,6 +13,9 @@
         "typo3/cms-core": "^13.4 || ^14.3",
         "typo3/testing-framework": "^9.5"
     },
+    "suggest": {
+        "psbits/crafter": "Code and file generator for PSBits TYPO3 extensions"
+    },
     "autoload": {
         "psr-4": {
             "PSBits\\Qa\\": "src/"

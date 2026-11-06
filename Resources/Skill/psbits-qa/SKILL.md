@@ -32,16 +32,52 @@ The QA tooling lives in the `psbits/qa` package (installed into
 - Docker setup: `.Build/vendor/psbits/qa/Resources/Testing/Docker/`
 - PHPUnit XMLs are **generated** into `.Build/phpunit/` (git-ignored) before
   every test run by `renderPhpunitXml.php`; no XML is committed to the repo
-- The skill files you are reading (this one, `psbits-foundation` and
-  `psbits-v14-compat`), the git pre-commit hook and the caller CI workflow
-  (`.github/workflows/ci.yml`) are installed/synced by `bin/qa link`
-  (composer post-install/update hook); `bin/qa check` verifies all of them
-  (CI gate, run by the shared qa job)
+- The skill files you are reading (this one, `psbits-cgl`,
+  `psbits-foundation` and `psbits-v14-compat`), the git pre-commit hook, the
+  caller CI workflow (`.github/workflows/ci.yml`) and the caller
+  `composer.json` scripts are installed/synced by `bin/qa link` (composer
+  post-install/update hook); `bin/qa check` verifies all of them (CI gate,
+  run by the shared qa job)
 - The caller CI workflow is a template-managed file: it invokes the shared
   test-matrix workflow `phantasie-schmiede/qa/.github/workflows/extension-ci.yml`
   (single source of truth for the whole CI - fix it there, not per repo)
 - Run `bin/qa paths` to list the shared resource locations
 - Upgrade the tooling with `composer update psbits/qa`
+
+## Shared QA scripts (synced by `bin/qa link`)
+
+The caller `composer.json` `scripts` section is part of the package-managed
+state. `bin/qa link` adds the full set of shared scripts when missing, each
+with its own applicability condition, so only scripts that fit the
+repository are added:
+
+- `analyze:php` (PHPStan, needs `Build/Quality/phpstan.neon.dist`)
+- `audit:composer`, `validate:composer` (always)
+- `lint:php` / `fix:php` (PHP-CS-Fixer, needs
+  `Build/Quality/.php-cs-fixer.dist.php`)
+- `lint:classes` / `fix:classes`, `lint:htmlxml` / `fix:htmlxml`,
+  `lint:js`, `lint:scss` (npm proxies, need the matching npm script in the
+  repository `package.json`)
+- `lint:typoscript` (needs at least one `.typoscript` file below
+  `Configuration/TypoScript`)
+- `lint:yaml` (needs the `Configuration` directory)
+- `lint:xlf` / `fix:xlf` (check/fix the XLIFF trans-unit id order, need
+  `*.xlf` files) and `fix:throws` (rewrite stale `@throws` docblocks in a
+  PHPStan loop, needs the PHPStan configuration)
+
+`bin/qa link` also creates `lint:all`, `fix:all` and `qa` when missing. The
+`test:*` scripts and the `post-install-cmd` / `post-update-cmd` bootstrap
+stay under repository management (profile-dependent, handled by
+psbits/crafter where applicable).
+
+- Existing script entries and aggregate members are never modified. An
+  aggregate deviating from the expected standard is reported with the
+  standard printed in the output - align it manually and commit. The
+  standard order of `fix:all` is `fix:classes`, `fix:htmlxml`, `fix:throws`,
+  `fix:xlf`, `fix:php` (the php-cs-fixer run last, normalizing what the
+  other fixers wrote); `lint:all` is alphabetical.
+- `bin/qa check` enforces the same in the CI (missing scripts, missing
+  aggregates and aggregate deviations all fail the gate).
 
 ## Test matrix (repos with `test:local` / `test:docker`)
 
@@ -100,9 +136,13 @@ Only these QA files remain in the repository (everything else is shared):
   `paths` / `excludePaths` / `ignoreErrors` / the phpstan-typo3 extension include
 - `Build/Quality/coverage-baseline.json` - per-repo coverage baseline
 - `Build/Quality/.prettierignore` - where prettier is used (repo-relative ignore list)
-- `.opencode/skills/psbits-qa`, `.opencode/skills/psbits-foundation` and
-  `.opencode/skills/psbits-v14-compat` - symlinks into the package (created by
-  `bin/qa link`)
+- `composer.json` - the `scripts` section is kept in sync by `bin/qa link`
+  (shared scripts, `lint:all` / `fix:all` / `qa` aggregates); repo-specific
+  scripts (e.g. `test:unit:update-fixtures`) are never touched
+- `.opencode/skills/psbits-qa`, `.opencode/skills/psbits-cgl`,
+  `.opencode/skills/psbits-foundation` and
+  `.opencode/skills/psbits-v14-compat` - symlinks into the package (created
+  by `bin/qa link`)
 
 ## Environment notes
 

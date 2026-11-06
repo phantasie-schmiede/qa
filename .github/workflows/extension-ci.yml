@@ -442,28 +442,28 @@ jobs:
         # the installed package (run `qa link` and commit on drift).
         run: .Build/bin/qa check
 
-      - name: Lint and analyse
-        # The core lints run everywhere; the remaining ones only when the
-        # repository defines them (e.g. lint:classes needs package.json,
-        # lint:typoscript a TypoScript configuration).
+      - name: Verify sync is committed
+        # The composer update above ran `qa link`, which updates the
+        # package-managed files (composer.json, caller workflow) in the work
+        # tree when they deviate from the installed package. The updates must
+        # be committed, so the tree must be clean for them after the sync.
         run: |
-          composer analyze:php
-          composer lint:php
-          composer validate:composer
-          for script in lint:classes lint:htmlxml lint:typoscript lint:yaml; do
-              if composer run --list | grep -q "^  $script "; then
-                  composer "$script"
-              fi
-          done
+          dirty="$(git status --porcelain -- composer.json .github/workflows/ci.yml)"
+          if [ -n "$dirty" ]; then
+              echo "package-managed files were updated by 'qa link' but are not committed:"
+              echo "$dirty"
+              echo 'run "qa link" and commit the updated files'
+              exit 1
+          fi
 
-      - name: Report dependency advisories
-        # Reported, not enforced: every TYPO3 major in the support window still
-        # carries open Packagist advisories, so gating on this would leave the
-        # build permanently red and people would stop reading it. Surfaces as a
-        # GitHub warning annotation instead.
-        run: >-
-          composer audit --abandoned=report
-          || echo "::warning::composer audit reported findings - see the job log"
+      - name: Lint and analyse
+        # Runs the repository's lint:all (kept in sync with the shared QA
+        # scripts by `qa link`): the core lints everywhere, the optional
+        # ones (e.g. lint:classes needs package.json, lint:typoscript a
+        # TypoScript configuration) only when the repository defines them.
+        # The audit member blocks on open advisories on purpose - the
+        # remedy is a composer update.
+        run: composer lint:all
 
   qa-v14:
     name: 'Static analysis & linters (TYPO3 14.3)'
@@ -526,22 +526,8 @@ jobs:
         run: .Build/bin/qa check
 
       - name: Lint and analyse
-        # See qa-v13 - core lints everywhere, optional lints per repository.
-        run: |
-          composer analyze:php
-          composer lint:php
-          composer validate:composer
-          for script in lint:classes lint:htmlxml lint:typoscript lint:yaml; do
-              if composer run --list | grep -q "^  $script "; then
-                  composer "$script"
-              fi
-          done
-
-      - name: Report dependency advisories
-        # See qa-v13 - reported, not enforced.
-        run: >-
-          composer audit --abandoned=report
-          || echo "::warning::composer audit reported findings - see the job log"
+        # See qa-v13 - the repository's lint:all, kept in sync by `qa link`.
+        run: composer lint:all
 
   ter-gate:
     name: Check TER token

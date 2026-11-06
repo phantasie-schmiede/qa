@@ -230,6 +230,28 @@ final class SongRepository extends AbstractRepository
 
 - Tooling: `PSBits/class_phpdoc_cleanup` (php-cs-fixer).
 
+### 12. Always use `JSON_THROW_ON_ERROR` with `json_decode` / `json_encode`
+
+`json_decode` and `json_encode` are called with the `JSON_THROW_ON_ERROR`
+flag, so a malformed payload or an unencodable value fails with a
+`JsonException` instead of a silent `false`:
+
+```php
+use function json_decode;
+use function json_encode;
+
+$data = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+$raw  = json_encode($data, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+```
+
+- The flag is the last argument (`flags`) for `json_encode` and the fourth
+  argument (`flags`) for `json_decode`; the other arguments (assoc, depth)
+  stay as they are.
+- A call with the flag can throw `JsonException` - declare it with
+  `@throws JsonException` (see 3) and import it with `use JsonException;`
+  (see 8).
+- AI-side only - no fixer or PHPStan rule enforces the flag.
+
 ## The tooling
 
 Everything lives in the `psbits/qa` package (`.Build/vendor/psbits/qa/`), not
