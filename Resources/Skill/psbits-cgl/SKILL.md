@@ -212,11 +212,12 @@ $label = 'count: ' . count($ids);
 ### 11. Class docblocks carry no boilerplate
 
 The docblock of a class-like declaration carries only what the code
-itself does not show. The class name - plain or as a `Class Name`
-line - and every `@package` tag are dropped; a docblock that holds
-nothing else disappears together with its line, while a docblock with
-valuable content (a real description, other tags like `@extends`) keeps
-that content and loses only the boilerplate:
+itself does not show. The declaration name - plain or as a `Class Name`,
+`Enum Name`, `Interface Name` or `Trait Name` line - and every
+`@package` tag are dropped; a docblock that holds nothing else
+disappears together with its line, while a docblock with valuable
+content (a real description, other tags like `@extends`) keeps that
+content and loses only the boilerplate:
 
 ```php
 /**

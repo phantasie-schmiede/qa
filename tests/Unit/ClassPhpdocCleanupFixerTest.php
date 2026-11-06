@@ -31,11 +31,43 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             final class Repository
             {
             }
+
+            /**
+             * Interface Handler
+             *
+             * @package App
+             */
+            #[Handler]
+            interface Handler
+            {
+            }
             php;
         $fixer = new ClassPhpdocCleanupFixer();
         $once  = $this->fix($fixer, $code);
 
         self::assertSame($once, $this->fix($fixer, $once));
+    }
+
+    public function testIgnoresDocblocksAboveOtherStatements(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            /**
+             * Class Demo
+             *
+             * @package App
+             */
+            $items = [
+                'a',
+            ];
+
+            class Demo
+            {
+            }
+            php;
+
+        self::assertSame($code, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
     public function testIgnoresDocblocksOfNonClassDeclarations(): void
@@ -81,6 +113,15 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             class Demo
             {
             }
+
+            /**
+             * Interface Other
+             *
+             * @package App
+             */
+            interface Demo
+            {
+            }
             php;
 
         self::assertSame(<<<'php'
@@ -90,6 +131,13 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
              * Class Other
              */
             class Demo
+            {
+            }
+
+            /**
+             * Interface Other
+             */
+            interface Demo
             {
             }
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
@@ -168,6 +216,56 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             }
 
             class Four
+            {
+            }
+            php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
+    }
+
+    public function testRemovesKindPrefixedNameLines(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            /**
+             * Interface One
+             *
+             * @package App
+             */
+            interface One
+            {
+            }
+
+            /**
+             * Trait Two
+             *
+             * @package App
+             */
+            trait Two
+            {
+            }
+
+            /**
+             * Enum Three
+             *
+             * @package App
+             */
+            enum Three
+            {
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            interface One
+            {
+            }
+
+            trait Two
+            {
+            }
+
+            enum Three
             {
             }
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
@@ -331,6 +429,62 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             }
 
             enum Three
+            {
+            }
+            php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
+    }
+
+    public function testWorksWithAttributes(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            /**
+             * Class One
+             *
+             * @package App
+             */
+            #[Attribute]
+            class One
+            {
+            }
+
+            /**
+             * Two
+             *
+             * @package App
+             */
+            #[Route(path: '/two', methods: ['GET'])]
+            final class Two
+            {
+            }
+
+            /**
+             * @package App
+             */
+            #[First]
+            #[Second(['key' => 'value'])]
+            interface Three
+            {
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            #[Attribute]
+            class One
+            {
+            }
+
+            #[Route(path: '/two', methods: ['GET'])]
+            final class Two
+            {
+            }
+
+            #[First]
+            #[Second(['key' => 'value'])]
+            interface Three
             {
             }
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
