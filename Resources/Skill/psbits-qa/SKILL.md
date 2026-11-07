@@ -35,7 +35,7 @@ The QA tooling lives in the `psbits/qa` package (installed into
 - The skill files you are reading (this one, `psbits-cgl`,
   `psbits-foundation` and `psbits-v14-compat`), the git pre-commit hook, the
   caller CI workflow (`.github/workflows/ci.yml`) and the caller
-  `composer.json` scripts are installed/synced by `bin/qa link` (composer
+  `composer.json` scripts are installed/synced by `bin/qa sync` (composer
   post-install/update hook); `bin/qa check` verifies all of them (CI gate,
   run by the shared qa job)
 - The caller CI workflow is a template-managed file: it invokes the shared
@@ -44,10 +44,10 @@ The QA tooling lives in the `psbits/qa` package (installed into
 - Run `bin/qa paths` to list the shared resource locations
 - Upgrade the tooling with `composer update psbits/qa`
 
-## Shared QA scripts (synced by `bin/qa link`)
+## Shared QA scripts (synced by `bin/qa sync`)
 
 The caller `composer.json` `scripts` section is part of the package-managed
-state. `bin/qa link` adds the full set of shared scripts when missing, each
+state. `bin/qa sync` adds the full set of shared scripts when missing, each
 with its own applicability condition, so only scripts that fit the
 repository are added:
 
@@ -68,7 +68,7 @@ repository are added:
   `*.xlf` files) and `fix:throws` (rewrite stale `@throws` docblocks in a
   PHPStan loop, needs the PHPStan configuration)
 
-`bin/qa link` also creates `lint:all`, `fix:all` and `qa` when missing. The
+`bin/qa sync` also creates `lint:all`, `fix:all` and `qa` when missing. The
 `test:*` scripts and the `post-install-cmd` / `post-update-cmd` bootstrap
 stay under repository management (profile-dependent, handled by
 psbits/crafter where applicable).
@@ -139,13 +139,13 @@ Only these QA files remain in the repository (everything else is shared):
   `paths` / `excludePaths` / `ignoreErrors` / the phpstan-typo3 extension include
 - `Build/Quality/coverage-baseline.json` - per-repo coverage baseline
 - `Build/Quality/.prettierignore` - where prettier is used (repo-relative ignore list)
-- `composer.json` - the `scripts` section is kept in sync by `bin/qa link`
+- `composer.json` - the `scripts` section is kept in sync by `bin/qa sync`
   (shared scripts, `lint:all` / `fix:all` / `qa` aggregates); repo-specific
   scripts (e.g. `test:unit:update-fixtures`) are never touched
 - `.opencode/skills/psbits-qa`, `.opencode/skills/psbits-cgl`,
   `.opencode/skills/psbits-foundation` and
   `.opencode/skills/psbits-v14-compat` - symlinks into the package (created
-  by `bin/qa link`)
+  by `bin/qa sync`)
 
 ## Environment notes
 

@@ -12,10 +12,10 @@ holds the single source of truth for:
   typoscript-lint, lint-class-attributes)
 - the shared skills (`psbits-qa`, `psbits-foundation`, `psbits-v14-compat`) and
   the git pre-commit hook - `Resources/Skill/`, `Resources/GitHooks/`, installed
-  by `bin/qa link`
+  by `bin/qa sync`
 - the shared GitHub CI workflow (`extension-ci.yml` in this repository's
   `.github/workflows/`) and its caller template - `Resources/CI/ci.yml`,
-  kept in sync with the repositories by `bin/qa link` / `bin/qa check`
+  kept in sync with the repositories by `bin/qa sync` / `bin/qa check`
 
 ## Usage in an extension
 
@@ -31,8 +31,8 @@ holds the single source of truth for:
         }
     ],
     "scripts": {
-        "post-install-cmd": [".Build/bin/qa link"],
-        "post-update-cmd": [".Build/bin/qa link"]
+        "post-install-cmd": [".Build/bin/qa sync"],
+        "post-update-cmd": [".Build/bin/qa sync"]
     }
 }
 ```
@@ -51,7 +51,7 @@ jobs:
 ```
 
 Adopt it by copying `Resources/CI/ci.yml` from this package into
-`.github/workflows/ci.yml` once; from then on `bin/qa link`
+`.github/workflows/ci.yml` once; from then on `bin/qa sync`
 (composer post-install/update) keeps the file in sync with the template and
 `bin/qa check` (run by the CI qa job) fails on drift. Repositories without
 `Tests/Functional` run unit-only: the functional suite is skipped by
@@ -78,7 +78,7 @@ the repository directory name).
 ## CLI
 
 ```
-bin/qa link    install git hook + skill symlinks and create or sync the
+bin/qa sync    install git hook + skill symlinks and create or sync the
                caller CI workflow (idempotent)
 bin/qa check   verify hook, skill links and caller CI workflow (CI gate,
                exits non-zero on drift)

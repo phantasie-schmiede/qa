@@ -42,7 +42,7 @@ use function unlink;
 
 final class Application
 {
-    /** @var string[] shared skills installed as symlinks by qa link */
+    /** @var string[] shared skills installed as symlinks by qa sync */
     private const array SKILLS = [
         'psbits-qa',
         'psbits-cgl',
@@ -105,8 +105,9 @@ final class Application
 
     private const string USAGE = <<<text
     Usage:
-      qa link       Install the git pre-commit hook and the shared skill
-                    symlinks (psbits-qa, psbits-cgl, psbits-foundation,
+      qa sync       Sync the package-managed QA state: install the git
+                    pre-commit hook and the shared skill symlinks
+                    (psbits-qa, psbits-cgl, psbits-foundation,
                     psbits-v14-compat), create or sync the caller CI
                     workflow (.github/workflows/ci.yml), and sync the
                     caller composer.json scripts: add the shared scripts
@@ -135,8 +136,8 @@ final class Application
 
         try {
             switch ($command) {
-                case 'link':
-                    return self::link(self::repoRoot());
+                case 'sync':
+                    return self::sync(self::repoRoot());
                 case 'check':
                     return self::check(self::repoRoot());
                 case 'paths':
@@ -273,7 +274,7 @@ final class Application
         } elseif (self::filesIdentical($workflow, self::callerWorkflowTemplate())) {
             echo 'ok: caller workflow' . "\n";
         } else {
-            echo 'FAIL: caller workflow differs from the installed package (run qa link and commit)' . "\n";
+            echo 'FAIL: caller workflow differs from the installed package (run qa sync and commit)' . "\n";
             $failed = 1;
         }
 
@@ -351,7 +352,7 @@ final class Application
      * @throws RuntimeException
      * @throws UnexpectedValueException
      */
-    private static function link(string $root): int
+    private static function sync(string $root): int
     {
         $hooks = $root . '/.git/hooks';
 
@@ -703,7 +704,7 @@ final class Application
             if (isset($scripts[$script['name']])) {
                 echo 'ok: script ' . $script['name'] . "\n";
             } else {
-                echo 'FAIL: script ' . $script['name'] . ' missing (run qa link and commit)' . "\n";
+                echo 'FAIL: script ' . $script['name'] . ' missing (run qa sync and commit)' . "\n";
                 $failed = 1;
             }
         }
@@ -712,7 +713,7 @@ final class Application
 
         foreach (['lint:all', 'fix:all', 'qa'] as $aggregate) {
             if (!isset($scripts[$aggregate])) {
-                echo "FAIL: {$aggregate} missing (run qa link and commit)\n";
+                echo "FAIL: {$aggregate} missing (run qa sync and commit)\n";
                 $failed = 1;
                 continue;
             }

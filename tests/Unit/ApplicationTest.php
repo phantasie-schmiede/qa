@@ -9,8 +9,8 @@ use Random\RandomException;
 final class ApplicationTest extends TestCase
 {
     private const array MINIMAL_SCRIPTS = [
-        'post-install-cmd' => ['.Build/bin/qa link'],
-        'post-update-cmd'  => ['.Build/bin/qa link'],
+        'post-install-cmd' => ['.Build/bin/qa sync'],
+        'post-update-cmd'  => ['.Build/bin/qa sync'],
         'test:all'         => ['@test:unit'],
         'test:unit'        => 'phpunit',
     ];
@@ -22,8 +22,8 @@ final class ApplicationTest extends TestCase
         'fix:php'           => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose',
         'lint:all'          => ['@analyze:php', '@audit:composer', '@lint:php', '@validate:composer'],
         'lint:php'          => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose',
-        'post-install-cmd'  => ['.Build/bin/qa link'],
-        'post-update-cmd'   => ['.Build/bin/qa link'],
+        'post-install-cmd'  => ['.Build/bin/qa sync'],
+        'post-update-cmd'   => ['.Build/bin/qa sync'],
         'qa'                => ['@fix:all', '@lint:all', '@test:all'],
         'test:all'          => ['@test:unit'],
         'test:unit'         => 'phpunit',
@@ -56,7 +56,7 @@ final class ApplicationTest extends TestCase
     public function testCheckFailsOnMissingSingleSkillLink(): void
     {
         chdir($this->root);
-        Application::execute(['qa', 'link']);
+        Application::execute(['qa', 'sync']);
         unlink($this->root . '/.opencode/skills/psbits-foundation');
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
@@ -64,7 +64,7 @@ final class ApplicationTest extends TestCase
     public function testCheckFailsOnMissingSkillTarget(): void
     {
         chdir($this->root);
-        Application::execute(['qa', 'link']);
+        Application::execute(['qa', 'sync']);
         $this->removeTree($this->root . '/.Build/vendor/psbits/qa/Resources/Skill');
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
@@ -75,7 +75,7 @@ final class ApplicationTest extends TestCase
         $workflow = $this->root . '/.github/workflows/ci.yml';
         mkdir(dirname($workflow), 0755, true);
         file_put_contents($workflow, "name: CI\n# stale\n");
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
         self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
         file_put_contents($workflow, "name: CI\n# drifted\n");
         self::assertSame(1, Application::execute(['qa', 'check']));
@@ -84,7 +84,7 @@ final class ApplicationTest extends TestCase
     public function testCheckFailsOnTamperedHook(): void
     {
         chdir($this->root);
-        Application::execute(['qa', 'link']);
+        Application::execute(['qa', 'sync']);
         file_put_contents($this->root . '/.git/hooks/pre-commit', "echo tampered\n");
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
@@ -92,14 +92,14 @@ final class ApplicationTest extends TestCase
     public function testCheckPassesAfterLink(): void
     {
         chdir($this->root);
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
     public function testLinkInstallsHookAndSkillLinks(): void
     {
         chdir($this->root);
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         $hook = $this->root . '/.git/hooks/pre-commit';
         self::assertFileExists($hook);
@@ -117,7 +117,7 @@ final class ApplicationTest extends TestCase
     public function testLinkInstallsMissingCallerWorkflow(): void
     {
         chdir($this->root);
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
         self::assertFileEquals($this->root . '/.github/workflows/ci.yml', __DIR__ . '/../../Resources/CI/ci.yml');
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
@@ -128,7 +128,7 @@ final class ApplicationTest extends TestCase
         $workflow = $this->root . '/.github/workflows/ci.yml';
         mkdir(dirname($workflow), 0755, true);
         file_put_contents($workflow, "name: CI\n# stale\n");
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
         self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
@@ -157,7 +157,7 @@ final class ApplicationTest extends TestCase
         $this->writeRepositoryFixtures($scripts);
         chdir($this->root);
 
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         $scripts = $this->composerScripts();
         self::assertSame(['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
@@ -169,9 +169,9 @@ final class ApplicationTest extends TestCase
         $this->writeRepositoryFixtures();
         chdir($this->root);
 
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
         $first = (string) file_get_contents($this->root . '/composer.json');
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         self::assertSame($first, (string) file_get_contents($this->root . '/composer.json'));
     }
@@ -181,7 +181,7 @@ final class ApplicationTest extends TestCase
         $this->writeRepositoryFixtures(self::BASE_SCRIPTS, withXlf: false);
         chdir($this->root);
 
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         $scripts = $this->composerScripts();
         self::assertArrayNotHasKey('lint:xlf', $scripts);
@@ -228,7 +228,7 @@ final class ApplicationTest extends TestCase
     {
         $this->writeRepositoryFixtures();
         chdir($this->root);
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         $scripts = $this->composerScripts();
         unset($scripts['lint:xlf']);
@@ -237,7 +237,7 @@ final class ApplicationTest extends TestCase
         [$exit, $output] = $this->check();
 
         self::assertSame(1, $exit);
-        self::assertStringContainsString('FAIL: script lint:xlf missing (run qa link and commit)', $output);
+        self::assertStringContainsString('FAIL: script lint:xlf missing (run qa sync and commit)', $output);
     }
 
     public function testCheckFailsOnAggregateDeviation(): void
@@ -261,7 +261,7 @@ final class ApplicationTest extends TestCase
     {
         $this->writeRepositoryFixtures();
         chdir($this->root);
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         // The maintainer aligns the aggregates with the reported standard.
         $scripts = $this->composerScripts();
@@ -381,7 +381,7 @@ final class ApplicationTest extends TestCase
         $this->writeConfiguration();
         $this->writeCsFixerShim();
         chdir($this->root);
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         $scripts = $this->composerScripts();
         unset($scripts['lint:typoscript']);
@@ -390,7 +390,7 @@ final class ApplicationTest extends TestCase
         [$exit, $output] = $this->check();
 
         self::assertSame(1, $exit);
-        self::assertStringContainsString('FAIL: script lint:typoscript missing (run qa link and commit)', $output);
+        self::assertStringContainsString('FAIL: script lint:typoscript missing (run qa sync and commit)', $output);
     }
 
     /**
@@ -407,7 +407,7 @@ final class ApplicationTest extends TestCase
     private function link(): string
     {
         ob_start();
-        self::assertSame(0, Application::execute(['qa', 'link']));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
 
         return (string) ob_get_clean();
     }
