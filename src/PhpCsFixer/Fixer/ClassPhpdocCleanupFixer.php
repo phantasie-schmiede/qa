@@ -15,6 +15,7 @@ use PhpCsFixer\AbstractFixer;
 use PhpCsFixer\FixerDefinition\CodeSample;
 use PhpCsFixer\FixerDefinition\FixerDefinition;
 use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
+use PhpCsFixer\Tokenizer\CT;
 use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\Tokenizer\TokensAnalyzer;
@@ -54,9 +55,10 @@ use const T_WHITESPACE;
 
 /**
  * Removes the boilerplate from the docblocks of class-like declarations:
- * the short description is dropped when it merely repeats the class name
- * (the plain name or "Class Name"), every @package tag is dropped, and a
- * docblock that carries nothing else is removed together with its line.
+ * the short description is dropped when it merely repeats the name (the
+ * plain name, or the name preceded by one of the keywords "Class",
+ * "Enum", "Interface" or "Trait"), every @package tag is dropped, and
+ * a docblock that carries nothing else is removed together with its line.
  *
  * A docblock that holds valuable content - a real description, other tags
  * like @extends - keeps that content; only the boilerplate parts are cut
@@ -65,12 +67,13 @@ use const T_WHITESPACE;
  * The fixer works on the token list: a class-like declaration is located
  * by its T_CLASS / T_INTERFACE / T_TRAIT / T_ENUM token (an anonymous
  * class is skipped), and its docblock is the T_DOC_COMMENT token that
- * stands directly before it, whitespace and class modifiers apart. The
- * docblock content is one single token, so the cleanup is plain string
- * handling: the lines are split into the summary (the part before the
- * first @ tag) and the tags, the name paragraph and the @package tags
- * are cut out, and the cleaned lines are either written back as the new
- * token content or the whole token (and the rest of its line) is cleared.
+ * stands directly before it, whitespace, class modifiers and attributes
+ * apart. The docblock content is one single token, so the cleanup is
+ * plain string handling: the lines are split into the summary (the part
+ * before the first @ tag) and the tags, the name paragraph and the
+ * @package tags are cut out, and the cleaned lines are either written
+ * back as the new token content or the whole token (and the rest of its
+ * line) is cleared.
  */
 final class ClassPhpdocCleanupFixer extends AbstractFixer
 {
@@ -128,8 +131,10 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
 
     /**
      * Drops the first summary paragraph when it merely names the class
-     * (the plain name or "Class Name", case-insensitive) - the paragraph
-     * and the blank lines that separate it from the remaining text.
+     * (the plain name, or the name preceded by one of the keywords
+     * "Class", "Enum", "Interface" or "Trait"; case-insensitive) - the
+     * paragraph and the blank lines that separate it from the remaining
+     * text.
      */
     private static function dropNameParagraph(array $summary, string $className): array
     {
@@ -163,7 +168,7 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
         $text = implode(' ', $paragraph);
         $name = 0 === strcasecmp($text, $className);
 
-        if (!$name && 1 === preg_match('/^class\s+([a-z_][a-z0-9_]*)$/i', $text, $matches)) {
+        if (!$name && 1 === preg_match('/^(?:class|enum|interface|trait)\s+([a-z_][a-z0-9_]*)$/i', $text, $matches)) {
             $name = 0 === strcasecmp($matches[1], $className);
         }
 
@@ -206,8 +211,9 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
 
     /**
      * The docblock index of the class-like declaration at $index - the
-     * T_DOC_COMMENT standing directly before it, whitespace and the class
-     * modifiers (final, abstract, visibility, readonly) apart - or null.
+     * T_DOC_COMMENT standing directly before it, whitespace, the class
+     * modifiers (final, abstract, visibility, readonly) and attributes
+     * apart - or null.
      */
     private static function findDocblock(Tokens $tokens, int $index): ?int
     {
@@ -218,6 +224,12 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
                 $token->isGivenKind(T_WHITESPACE)
                 || $token->isGivenKind([T_ABSTRACT, T_FINAL, T_PROTECTED, T_PUBLIC, T_READONLY])
             ) {
+                continue;
+            }
+
+            if ($token->isGivenKind(CT::T_ATTRIBUTE_CLOSE)) {
+                $i = $tokens->findBlockStart(Tokens::BLOCK_TYPE_ATTRIBUTE, $i);
+
                 continue;
             }
 

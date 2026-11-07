@@ -1,17 +1,21 @@
 {
     "name": "psbits/qa",
     "description": "Shared QA infrastructure for PSBits TYPO3 extensions: test matrix scripts, Docker setup, linter and fixer configuration, custom PHP CS Fixer rules",
-    "type": "library",
     "license": "GPL-3.0-or-later",
+    "type": "library",
     "require": {
         "php": "^8.3",
         "friendsofphp/php-cs-fixer": "^3.95"
     },
     "require-dev": {
+        "ergebnis/composer-normalize": "^2.56",
         "phpstan/phpstan": "^2.2",
         "phpunit/phpunit": "^11",
         "typo3/cms-core": "^13.4 || ^14.3",
         "typo3/testing-framework": "^9.5"
+    },
+    "suggest": {
+        "psbits/crafter": "Code and file generator for PSBits TYPO3 extensions"
     },
     "autoload": {
         "psr-4": {
@@ -21,14 +25,17 @@
     "bin": [
         "bin/qa"
     ],
-    "scripts": {
-        "test": "phpunit -c tests/phpunit.xml.dist"
-    },
     "config": {
         "allow-plugins": {
+            "ergebnis/composer-normalize": true,
             "typo3/class-alias-loader": true,
             "typo3/cms-composer-installers": true
         },
         "sort-packages": true
+    },
+    "scripts": {
+        "fix:composer": "composer normalize",
+        "lint:composer": "composer normalize --dry-run --diff --no-check-lock --no-update-lock",
+        "test": "phpunit -c tests/phpunit.xml.dist"
     }
 }

@@ -6,6 +6,12 @@ const config = {
     htmlWhitespaceSensitivity: "ignore",
     overrides: [
         {
+            files: ["*.json"],
+            options: {
+                tabWidth: 2
+            }
+        },
+        {
             files: ["*.xml", "*.xlf"],
             options: {
                 parser: "xml",
