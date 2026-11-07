@@ -20,6 +20,96 @@ final class ThrowsDocblockApplierTest extends TestCase
         $this->removeTree($this->root);
     }
 
+    public function testAddsThrowsDirectlyAfterTheOtherTagsWithoutABlankLine(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @return array<string, mixed>
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @return array<string, mixed>
+                 * @throws NewError
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
+    }
+
+    public function testAddsThrowsToAnEmptyDocblock(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @throws NewError
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
+    }
+
     public function testAddsThrowsToExistingDocblock(): void
     {
         $file = $this->fixture(<<<'php'
@@ -217,6 +307,101 @@ final class ThrowsDocblockApplierTest extends TestCase
             php, file_get_contents($file));
     }
 
+    public function testDropsALeadingBlankStarLine(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 *
+                 * @return array<string, mixed>
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @return array<string, mixed>
+                 * @throws NewError
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
+    }
+
+    public function testDropsBlankStarLinesBetweenTheTags(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @return array<string, mixed>
+                 *
+                 * @throws \App\Old
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared \App\Old.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @return array<string, mixed>
+                 * @throws NewError
+                 */
+                public function run(): array
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
+    }
+
     public function testExpandsSingleLineDocblockWhenAddingThrows(): void
     {
         $file = $this->fixture(<<<'php'
@@ -242,11 +427,25 @@ final class ThrowsDocblockApplierTest extends TestCase
         ]);
 
         self::assertSame(['fixed' => 1, 'skipped' => []], $result);
-        $content = (string) file_get_contents($file);
-        self::assertStringNotContainsString('/** @return', $content);
-        self::assertStringContainsString("     * @return array<string, string>\n", $content);
-        self::assertStringContainsString("     * @throws ValueError\n", $content);
-        self::assertStringContainsString("use ValueError;\n", $content);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            use ValueError;
+
+            final class Helper
+            {
+                /**
+                 * @return array<string, string>
+                 * @throws ValueError
+                 */
+                public function render(): array
+                {
+                    return [];
+                }
+            }
+            php, file_get_contents($file));
     }
 
     public function testIgnoresClassDeclarationsInsideHeredocs(): void
@@ -411,6 +610,103 @@ final class ThrowsDocblockApplierTest extends TestCase
         $content = (string) file_get_contents($file);
         self::assertStringNotContainsString('@throws', $content);
         self::assertStringContainsString(' * @return array<string, string>', $content);
+    }
+
+    public function testKeepsTheParameterOrderOfTheParamLines(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @param string $b
+                 * @param int $a
+                 * @return string
+                 */
+                public function run(string $b, int $a): string
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @param string $b
+                 * @param int $a
+                 * @return string
+                 * @throws NewError
+                 */
+                public function run(string $b, int $a): string
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
+    }
+
+    public function testKeepsThePhpStanThrowsVariant(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @phpstan-throws \App\Old
+                 * @return string
+                 */
+                public function run(): string
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared \App\Old.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @return string
+                 * @phpstan-throws NewError
+                 */
+                public function run(): string
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
     }
 
     public function testMergesReportsForTheSameTraitMethod(): void
@@ -712,6 +1008,55 @@ final class ThrowsDocblockApplierTest extends TestCase
         self::assertCount(1, $result['skipped']);
         self::assertStringEndsWith(': unrecognized message', $result['skipped'][0]);
         self::assertSame($code, file_get_contents($file));
+    }
+
+    public function testSortsTheTagsAlphabetically(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @throws \App\Old
+                 * @param int $a
+                 * @return string
+                 */
+                public function run(int $a): string
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\NewError, declared \App\Old.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 * @param int $a
+                 * @return string
+                 * @throws NewError
+                 */
+                public function run(int $a): string
+                {
+                    throw new \App\NewError('x');
+                }
+            }
+            php, file_get_contents($file));
     }
 
     private function fixture(string $code): string

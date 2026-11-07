@@ -207,7 +207,6 @@ final class ThrowsFixer
 
     /**
      * @param list<array{file: string, line: int, message: string}> $entries
-     *
      * @return array{fixed: int, skipped: list<string>}
      */
     private function apply(ThrowsDocblockApplier $applier, array $entries): array

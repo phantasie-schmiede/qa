@@ -16,8 +16,6 @@ use function str_repeat;
 use function str_replace;
 
 /**
- * Trait SiteBasedTestTrait
- *
  * Writes site configuration files for functional tests.
  *
  * This is a cut-down version of the identically named trait from typo3/cms-core. The core package

@@ -19,9 +19,12 @@ use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
 
+use function array_slice;
 use function count;
 use function explode;
+use function implode;
 use function str_contains;
+use function str_ends_with;
 use function str_starts_with;
 use function strrpos;
 use function substr;
@@ -37,6 +40,11 @@ use const T_WHITESPACE;
  *
  * The empty docblocks are mainly left behind by the no_superfluous_phpdoc_tags
  * fixer, which drops the redundant tags but keeps the docblock shell.
+ *
+ * A docblock must not start or end with a blank star line either - the
+ * leading and trailing " *" lines are dropped before the emptiness
+ * check, so a shell of " *" lines becomes an empty docblock and is
+ * removed with it.
  *
  * The fixer works on the token list: docblocks are T_DOC_COMMENT tokens,
  * every other comment style is a T_COMMENT token, and each comment
@@ -72,10 +80,49 @@ final class EmptyCommentsFixer extends AbstractFixer
         return true;
     }
 
+    /**
+     * Drops the blank star lines at the top and bottom of a multi-line
+     * docblock (the " *" lines right after the opening /** and right
+     * before the closing delimiter); single-line docblocks have no
+     * inner lines and are returned unchanged.
+     */
+    private static function trimBlankStarLines(string $content): string
+    {
+        if (
+            !str_starts_with($content, '/**')
+            || !str_ends_with($content, '*/')
+            || !str_contains($content, "\n")
+        ) {
+            return $content;
+        }
+
+        $lines = explode("\n", $content);
+        $start = 1;
+        $end   = count($lines);
+
+        while ($start < $end - 1 && 1 === preg_match('/^[ \t]*\*[ \t]*\r?$/', $lines[$start])) {
+            ++$start;
+        }
+
+        while ($end - 1 > $start && 1 === preg_match('/^[ \t]*\*[ \t]*\r?$/', $lines[$end - 2])) {
+            --$end;
+        }
+
+        if (1 === $start && count($lines) === $end) {
+            return $content;
+        }
+
+        return implode("\n", [
+            ...array_slice($lines, 0, 1),
+            ...array_slice($lines, $start, $end - $start - 1),
+            ...array_slice($lines, count($lines) - 1),
+        ]);
+    }
+
     public function getDefinition(): FixerDefinitionInterface
     {
         return new FixerDefinition(
-            'Removes empty comments and docblocks without content.',
+            'Removes empty comments and docblocks without content and drops the blank star lines at the top and bottom of docblocks.',
             [
                 new CodeSample(
                     <<<'PHP'
@@ -84,6 +131,23 @@ final class EmptyCommentsFixer extends AbstractFixer
                         class Demo
                         {
                             /**
+                             */
+                            public function run(): void
+                            {
+                            }
+                        }
+
+                        PHP
+                ),
+                new CodeSample(
+                    <<<'PHP'
+                        <?php
+
+                        class Demo
+                        {
+                            /**
+                             *
+                             * @throws \RuntimeException
                              */
                             public function run(): void
                             {
@@ -129,6 +193,15 @@ final class EmptyCommentsFixer extends AbstractFixer
 
             if (!$token->isGivenKind([T_DOC_COMMENT, T_COMMENT])) {
                 continue;
+            }
+
+            if ($token->isGivenKind(T_DOC_COMMENT)) {
+                $trimmed = self::trimBlankStarLines($token->getContent());
+
+                if ($trimmed !== $token->getContent()) {
+                    $tokens[$index] = new Token([T_DOC_COMMENT, $trimmed]);
+                    $token          = $tokens[$index];
+                }
             }
 
             if (!self::isEmpty($token->getContent())) {

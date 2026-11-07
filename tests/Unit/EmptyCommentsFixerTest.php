@@ -8,6 +8,70 @@ use PSBits\Qa\PhpCsFixer\Fixer\EmptyCommentsFixer;
 
 final class EmptyCommentsFixerTest extends TestCase
 {
+    public function testDropsALeadingBlankStarLine(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    public function testDropsATrailingBlankStarLine(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -70,7 +134,6 @@ final class EmptyCommentsFixerTest extends TestCase
             {
                 /**
                  * @param string $name
-                 *
                  * @throws \InvalidArgumentException
                  */
                 public function run(string $name): void
@@ -92,6 +155,39 @@ final class EmptyCommentsFixerTest extends TestCase
             php;
 
         self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    public function testRemovesADocblockThatOnlyCarriesBlankStarLines(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 *
+                 *
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
     public function testRemovesEmptyBlockComment(): void

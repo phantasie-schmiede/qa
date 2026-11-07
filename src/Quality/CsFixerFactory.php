@@ -180,7 +180,22 @@ final class CsFixerFactory
                     'align' => 'vertical',
                     'tags'  => ['param'],
                 ],
-                'phpdoc_order'                    => true,
+                'phpdoc_order'                    => [
+                    'order' => [
+                        'param',
+                        'return',
+                        'see',
+                        'template',
+                        'throws',
+                        'var',
+                    ],
+                ],
+                'phpdoc_separation'               => [
+                    'groups'                    => [
+                        ['param', 'return', 'see', 'template', 'throws', 'var'],
+                    ],
+                    'skip_unlisted_annotations' => true,
+                ],
                 'PSBits/alphabetical_array_keys'  => true,
                 'PSBits/block_comments'           => true,
                 'PSBits/class_block_separation'   => [

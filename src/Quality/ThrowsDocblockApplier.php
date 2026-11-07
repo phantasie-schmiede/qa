@@ -32,6 +32,11 @@ use function usort;
  * message and rewrites, completes or removes the docblock above it (a
  * docblock sits directly above the signature or the attributes above it).
  *
+ * Every rewritten docblock follows the house layout: the description,
+ * one blank star line, then all tags sorted by tag name without blank
+ * lines in between (the @param lines keep their parameter order, the
+ * @throws lines their name-sorted order).
+ *
  * The @throws lines use the short name of the exception and the missing
  * use statement is added to the file (an exception from the own namespace
  * needs no import; a colliding short name gets a descriptive alias).
@@ -59,7 +64,6 @@ final class ThrowsDocblockApplier
      *
      * @param null|string $inString the open quote of a string started on a
      *                              previous line, or null
-     *
      * @return array{0: string, 1: bool, 2: null|string} [masked line, block
      *                                                      comment still open,
      *                                                      open quote or null]
@@ -361,7 +365,6 @@ final class ThrowsDocblockApplier
      * @param list<string>             $lines
      * @param array{0: int, 1: string} $candidate [signatureIndex (0-based), indent]
      * @param list<string>             $names     display names (short name or alias)
-     *
      * @return null|array{0: int, 1: int, 2: list<string>} [startIdx, endIdx, replacementLines]
      */
     private function editForCandidate(array $lines, array $candidate, array $names): ?array
@@ -393,7 +396,6 @@ final class ThrowsDocblockApplier
     /**
      * @param list<string>                                   $lines
      * @param array{line: int, class: ?string, name: string} $target
-     *
      * @return null|array{0: int, 1: string} [signatureIndex (0-based), indent]
      */
     private function findCandidate(array $lines, array $target): ?array
@@ -459,34 +461,6 @@ final class ThrowsDocblockApplier
         array_splice($lines, $position, 0, $payload);
 
         return $lines;
-    }
-
-    /**
-     * The line after which the @throws lines are inserted when the
-     * docblock has no @throws yet: after the last content line (or after
-     * the opening /** of an empty docblock).
-     *
-     * @param list<string> $lines
-     */
-    private function insertionPosition(array $lines, int $docStart, int $docEnd): int
-    {
-        $lastContent = null;
-
-        foreach (range($docStart, $docEnd) as $index) {
-            $line = $lines[$index];
-
-            if (
-                1 === preg_match('/^\s*\/\*\*/', $line)
-                || 1 === preg_match('/^\s*\*\/\s*$/', $line)
-                || 1 === preg_match('/^\s*\*\s*$/', $line)
-            ) {
-                continue;
-            }
-
-            $lastContent = $index;
-        }
-
-        return null === $lastContent ? $docStart + 1 : $lastContent + 1;
     }
 
     /**
@@ -619,6 +593,13 @@ final class ThrowsDocblockApplier
     }
 
     /**
+     * Normalizes the docblock at $docStart..$docEnd to the house layout:
+     * the description, one blank star line, then all tags sorted by tag
+     * name without blank lines in between (the @param lines keep their
+     * parameter order, the @throws lines their name-sorted order). The
+     * exception tags are replaced with one line per name in $names, and
+     * a docblock without description and without tags is dropped.
+     *
      * @param list<string> $lines
      * @param list<string> $names
      * @return null|array{0: int, 1: int, 2: list<string>}
@@ -673,14 +654,52 @@ final class ThrowsDocblockApplier
             $docEnd += count($expanded) - 1;
         }
 
-        $throwIndices  = [];
         $hasPhpStanTag = false;
+        $description   = [];
+        $tagChunks     = [];
+        $seenTag       = false;
 
-        foreach (range($docStart, $docEnd) as $index) {
-            if (1 === preg_match('/^\s*\*\s*@(phpstan-)?throws(\s|$)/', $lines[$index], $tagMatch)) {
-                $throwIndices[] = $index;
-                $hasPhpStanTag  = $hasPhpStanTag || 'phpstan' === $tagMatch[1];
+        if ($docStart + 1 <= $docEnd - 1) {
+            foreach (range($docStart + 1, $docEnd - 1) as $index) {
+                $line = $lines[$index];
+
+                if (1 === preg_match('/^\s*\*\s*@(phpstan-)?throws(\s|$)/', $line, $throwMatch)) {
+                    // replaced by $names below
+                    $hasPhpStanTag = $hasPhpStanTag || 'phpstan-' === $throwMatch[1];
+                    $seenTag       = true;
+
+                    continue;
+                }
+
+                if (1 === preg_match('/^\s*\*\s*@[a-z-]+/', $line)) {
+                    $tagChunks[] = [$line];
+                    $seenTag     = true;
+
+                    continue;
+                }
+
+                if (1 === preg_match('/^\s*\*\s*$/', $line)) {
+                    if (false === $seenTag) {
+                        $description[] = $line;
+                    }
+
+                    continue;
+                }
+
+                if (false === $seenTag) {
+                    $description[] = $line;
+                } elseif ([] !== $tagChunks) {
+                    /*
+                     * a text line below the first tag belongs to the tag
+                     * chunk above it (a multi-line annotation)
+                     */
+                    $tagChunks[count($tagChunks) - 1][] = $line;
+                }
             }
+        }
+
+        while ([] !== $description && 1 === preg_match('/^\s*\*\s*$/', $description[count($description) - 1])) {
+            array_pop($description);
         }
 
         $tag        = $hasPhpStanTag ? 'phpstan-throws' : 'throws';
@@ -690,72 +709,43 @@ final class ThrowsDocblockApplier
             $throwLines[] = $indent . ' * @' . $tag . ' ' . $name;
         }
 
-        if ([] === $names) {
-            $block = [];
-
-            foreach (range($docStart, $docEnd) as $index) {
-                if (!in_array($index, $throwIndices, true)) {
-                    $block[] = $lines[$index];
-                }
-            }
-
-            // drop a dangling blank star directly above the closing */
-            if (
-                2 <= count($block)
-                && 1 === preg_match('/^\s*\*\s*$/', $block[count($block) - 2])
-                && 1 === preg_match('/^\s*\*\/\s*$/', $block[count($block) - 1])
-            ) {
-                array_splice($block, count($block) - 2, 1);
-            }
-
-            $hasContent = false;
-
-            foreach ($block as $line) {
-                if (
-                    1 === preg_match('/^\s*\/\*\*/', $line)
-                    || 1 === preg_match('/^\s*\*\/\s*$/', $line)
-                    || 1 === preg_match('/^\s*\*\s*$/', $line)
-                ) {
-                    continue;
-                }
-
-                $hasContent = true;
-
-                break;
-            }
-
-            return [$docStart, $end, $hasContent ? $block : []];
+        foreach ($throwLines as $line) {
+            $tagChunks[] = [$line];
         }
 
-        $position = [] === $throwIndices ? $this->insertionPosition($lines, $docStart, $docEnd) : $throwIndices[0];
-        $block    = [];
-        $inserted = false;
+        /*
+         * usort is stable since PHP 8, so equal keys keep their original
+         * relative order: the @param lines stay in parameter order and
+         * the @throws lines keep the name-sorted order of $names.
+         */
+        usort($tagChunks, static function(array $a, array $b): int {
+            preg_match('/^\s*\*\s*@(?:phpstan-|psalm-)?([a-z-]+)/', $a[0], $matchA);
+            preg_match('/^\s*\*\s*@(?:phpstan-|psalm-)?([a-z-]+)/', $b[0], $matchB);
 
-        foreach (range($docStart, $docEnd) as $index) {
-            if (in_array($index, $throwIndices, true)) {
-                if (!$inserted) {
-                    $block    = [...$block, ...$throwLines];
-                    $inserted = true;
-                }
+            return strcasecmp((string) ($matchA[1] ?? ''), (string) ($matchB[1] ?? ''));
+        });
 
-                continue;
-            }
-
-            if ([] === $throwIndices && $index === $position) {
-                $last          = [] === $block ? null : $block[count($block) - 1];
-                $lastIsBlank   = null !== $last && 1 === preg_match('/^\s*\*\s*$/', $last);
-                $lastIsOpening = null !== $last && 1 === preg_match('/^\s*\/\*\*/', $last);
-                $nextIsBlank   = 1 === preg_match('/^\s*\*\s*$/', $lines[$index]);
-
-                if (null !== $last && !$lastIsBlank && !$lastIsOpening && !$nextIsBlank) {
-                    $block[] = $indent . ' *';
-                }
-
-                $block = [...$block, ...$throwLines];
-            }
-
-            $block[] = $lines[$index];
+        if ([] === $description && [] === $tagChunks) {
+            return [$docStart, $end, []];
         }
+
+        $block = [$lines[$docStart]];
+
+        foreach ($description as $line) {
+            $block[] = $line;
+        }
+
+        if ([] !== $description && [] !== $tagChunks) {
+            $block[] = $indent . ' *';
+        }
+
+        foreach ($tagChunks as $chunk) {
+            foreach ($chunk as $line) {
+                $block[] = $line;
+            }
+        }
+
+        $block[] = $lines[$docEnd];
 
         return [$docStart, $end, $block];
     }
@@ -835,7 +825,6 @@ final class ThrowsDocblockApplier
     /**
      * @param list<string>                                   $lines
      * @param array{line: int, class: ?string, name: string} $target
-     *
      * @return null|array{0: int, 1: string} [signatureIndex (0-based), indent]
      */
     private function scanCandidates(array $lines, array $target, bool $matchClass): ?array

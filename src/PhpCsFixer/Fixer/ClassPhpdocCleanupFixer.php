@@ -70,10 +70,10 @@ use const T_WHITESPACE;
  * stands directly before it, whitespace, class modifiers and attributes
  * apart. The docblock content is one single token, so the cleanup is
  * plain string handling: the lines are split into the summary (the part
- * before the first @ tag) and the tags, the name paragraph and the
- * @package tags are cut out, and the cleaned lines are either written
- * back as the new token content or the whole token (and the rest of its
- * line) is cleared.
+ * before the first @ tag) and the tags; the name paragraph and the
+ * package tags are cut out, and the cleaned lines are either written
+ * back as the new token content or the whole token (and the rest of
+ * its line) is cleared.
  */
 final class ClassPhpdocCleanupFixer extends AbstractFixer
 {

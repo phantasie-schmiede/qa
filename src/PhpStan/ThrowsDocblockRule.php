@@ -179,8 +179,9 @@ final class ThrowsDocblockRule implements MultipleNodeTypesRule
 
     /**
      * Reads the documented exception classes tag by tag (one entry per
-     * @throws or @phpstan-throws line, @phpstan-throws taking precedence),
-     * so no subtype elimination is applied between the documented types.
+     * line carrying @throws or @phpstan-throws, @phpstan-throws taking
+     * precedence), so no subtype elimination is applied between the
+     * documented types.
      *
      * @return list<string> object class names, without leading backslash
      */

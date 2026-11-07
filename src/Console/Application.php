@@ -10,20 +10,21 @@ use PSBits\Qa\Quality\XlfSorter;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
-
 use UnexpectedValueException;
+
 use function array_diff;
 use function array_filter;
 use function array_key_exists;
 use function array_keys;
+use function array_merge;
 use function array_values;
 use function chmod;
 use function count;
 use function dirname;
 use function file_get_contents;
 use function file_put_contents;
-use function in_array;
 use function implode;
+use function in_array;
 use function is_array;
 use function is_dir;
 use function is_file;
@@ -33,22 +34,32 @@ use function ltrim;
 use function mkdir;
 use function rmdir;
 use function sort;
-use function strcmp;
 use function str_starts_with;
+use function strcmp;
 use function strlen;
-use function substr;
 use function strtolower;
+use function substr;
 use function unlink;
 
 final class Application
 {
-    /** @var string[] shared skills installed as symlinks by qa sync */
-    private const array SKILLS = [
-        'psbits-qa',
-        'psbits-cgl',
-        'psbits-foundation',
-        'psbits-v14-compat',
-    ];
+    /**
+     * The canonical fix:all order: the repository formatters first, then
+     * the docblock and XLIFF fixers, and finally fix:php, which normalizes
+     * the import order and whitespace of what the other fixers wrote.
+     *
+     * @var list<string>
+     */
+    private const array FIX_ALL_ORDER = ['fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json', 'fix:throws', 'fix:xlf', 'fix:php'];
+
+    /**
+     * The canonical lint:all members besides the repository's own lint:*
+     * scripts; a member is part of the standard only when the referenced
+     * script exists in the repository.
+     *
+     * @var list<string>
+     */
+    private const array LINT_ALL_MEMBERS = ['@analyze:php', '@audit:composer', '@validate:composer'];
 
     /**
      * The shared QA scripts that link adds to the caller composer.json when
@@ -63,46 +74,35 @@ final class Application
      * @var list<array{name: string, command: string, condition: string}>
      */
     private const array SCRIPTS = [
-        ['name' => 'analyze:php', 'command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan'],
-        ['name' => 'audit:composer', 'command' => 'composer audit --abandoned=report', 'condition' => 'always'],
-        ['name' => 'fix:classes', 'command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes'],
-        ['name' => 'fix:composer', 'command' => 'composer normalize', 'condition' => 'always'],
-        ['name' => 'fix:htmlxml', 'command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml'],
-        ['name' => 'fix:json', 'command' => 'npm run fix:json', 'condition' => 'npm:fix:json'],
-        ['name' => 'fix:php', 'command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose', 'condition' => 'csfixer'],
-        ['name' => 'fix:throws', 'command' => '.Build/bin/qa throws-fix', 'condition' => 'phpstan'],
-        ['name' => 'fix:xlf', 'command' => '.Build/bin/qa xlf-fix', 'condition' => 'xlf'],
-        ['name' => 'lint:classes', 'command' => 'npm run lint:classes', 'condition' => 'npm:lint:classes'],
-        ['name' => 'lint:composer', 'command' => 'composer normalize --dry-run --diff --no-check-lock --no-update-lock', 'condition' => 'always'],
-        ['name' => 'lint:htmlxml', 'command' => 'npm run lint:htmlxml', 'condition' => 'npm:lint:htmlxml'],
-        ['name' => 'lint:js', 'command' => 'npm run lint:js', 'condition' => 'npm:lint:js'],
-        ['name' => 'lint:json', 'command' => 'npm run lint:json', 'condition' => 'npm:lint:json'],
-        ['name' => 'lint:php', 'command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose', 'condition' => 'csfixer'],
-        ['name' => 'lint:scss', 'command' => 'npm run lint:scss', 'condition' => 'npm:lint:scss'],
-        ['name' => 'lint:typoscript', 'command' => 'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript', 'condition' => 'typoscript'],
-        ['name' => 'lint:xlf', 'command' => '.Build/bin/qa xlf-check', 'condition' => 'xlf'],
-        ['name' => 'lint:yaml', 'command' => 'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', 'condition' => 'configuration'],
-        ['name' => 'validate:composer', 'command' => 'composer validate --no-check-publish', 'condition' => 'always'],
+        ['command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan', 'name' => 'analyze:php'],
+        ['command' => 'composer audit --abandoned=report', 'condition' => 'always', 'name' => 'audit:composer'],
+        ['command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes', 'name' => 'fix:classes'],
+        ['command' => 'composer normalize', 'condition' => 'always', 'name' => 'fix:composer'],
+        ['command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml', 'name' => 'fix:htmlxml'],
+        ['command' => 'npm run fix:json', 'condition' => 'npm:fix:json', 'name' => 'fix:json'],
+        ['command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose', 'condition' => 'csfixer', 'name' => 'fix:php'],
+        ['command' => '.Build/bin/qa throws-fix', 'condition' => 'phpstan', 'name' => 'fix:throws'],
+        ['command' => '.Build/bin/qa xlf-fix', 'condition' => 'xlf', 'name' => 'fix:xlf'],
+        ['command' => 'npm run lint:classes', 'condition' => 'npm:lint:classes', 'name' => 'lint:classes'],
+        ['command' => 'composer normalize --dry-run --diff --no-check-lock --no-update-lock', 'condition' => 'always', 'name' => 'lint:composer'],
+        ['command' => 'npm run lint:htmlxml', 'condition' => 'npm:lint:htmlxml', 'name' => 'lint:htmlxml'],
+        ['command' => 'npm run lint:js', 'condition' => 'npm:lint:js', 'name' => 'lint:js'],
+        ['command' => 'npm run lint:json', 'condition' => 'npm:lint:json', 'name' => 'lint:json'],
+        ['command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose', 'condition' => 'csfixer', 'name' => 'lint:php'],
+        ['command' => 'npm run lint:scss', 'condition' => 'npm:lint:scss', 'name' => 'lint:scss'],
+        ['command' => 'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript', 'condition' => 'typoscript', 'name' => 'lint:typoscript'],
+        ['command' => '.Build/bin/qa xlf-check', 'condition' => 'xlf', 'name' => 'lint:xlf'],
+        ['command' => 'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', 'condition' => 'configuration', 'name' => 'lint:yaml'],
+        ['command' => 'composer validate --no-check-publish', 'condition' => 'always', 'name' => 'validate:composer'],
     ];
 
-    /**
-     * The canonical lint:all members besides the repository's own lint:*
-     * scripts; a member is part of the standard only when the referenced
-     * script exists in the repository.
-     *
-     * @var list<string>
-     */
-    private const array LINT_ALL_MEMBERS = ['@analyze:php', '@audit:composer', '@validate:composer'];
-
-    /**
-     * The canonical fix:all order: the repository formatters first, then
-     * the docblock and XLIFF fixers, and finally fix:php, which normalizes
-     * the import order and whitespace of what the other fixers wrote.
-     *
-     * @var list<string>
-     */
-    private const array FIX_ALL_ORDER = ['fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json', 'fix:throws', 'fix:xlf', 'fix:php'];
-
+    /** @var string[] shared skills installed as symlinks by qa sync */
+    private const array SKILLS = [
+        'psbits-qa',
+        'psbits-cgl',
+        'psbits-foundation',
+        'psbits-v14-compat',
+    ];
     private const string USAGE = <<<text
     Usage:
       qa sync       Sync the package-managed QA state: install the git
@@ -192,10 +192,10 @@ final class Application
     {
         $lintAll = array_values(array_filter(
             self::LINT_ALL_MEMBERS,
-            static fn (string $member): bool => isset($scripts[ltrim($member, '@')]),
+            static fn(string $member): bool => isset($scripts[ltrim($member, '@')]),
         ));
-        $fixAll  = [];
-        $rest    = [];
+        $fixAll = [];
+        $rest   = [];
 
         foreach (array_keys($scripts) as $name) {
             if (str_starts_with($name, 'lint:') && 'lint:all' !== $name) {
@@ -327,7 +327,7 @@ final class Application
      * the existing key order of all other entries (no re-sorting).
      *
      * @param array<string, list<string>|string> $scripts
-     * @param list<string>|string $value
+     * @param list<string>|string                $value
      * @return array<string, list<string>|string>
      */
     private static function insertSorted(array $scripts, string $name, array|string $value): array
@@ -335,7 +335,7 @@ final class Application
         $result = [];
 
         foreach ($scripts as $key => $existing) {
-            if (!isset($result[$name]) && strcmp((string) $key, $name) > 0) {
+            if (!isset($result[$name]) && 0 < strcmp($key, $name)) {
                 $result[$name] = $value;
             }
             $result[$key] = $existing;
@@ -346,6 +346,183 @@ final class Application
         }
 
         return $result;
+    }
+
+    /**
+     * Whether the caller package.json defines the given npm script - the
+     * composer scripts for the node tooling are thin proxies and only apply
+     * when the npm script they wrap exists.
+     */
+    private static function npmScriptDefined(string $root, string $script): bool
+    {
+        $file = $root . '/package.json';
+
+        if (!is_file($file)) {
+            return false;
+        }
+
+        $data = json_decode((string) file_get_contents($file), true);
+
+        return is_array($data)
+            && is_array($data['scripts'] ?? null)
+            && array_key_exists($script, $data['scripts']);
+    }
+
+    private static function packageRoot(): string
+    {
+        return dirname(__DIR__, 2);
+    }
+
+    private static function paths(): int
+    {
+        $root = self::packageRoot();
+
+        foreach ([
+            'caller workflow template' => 'Resources/CI/ci.yml',
+            'cs-fixer config'          => 'Resources/Quality/cs-fixer.dist.php',
+            'docker setup'             => 'Resources/Testing/Docker/',
+            'git hooks'                => 'Resources/GitHooks/',
+            'lint-class-attributes'    => 'Resources/Quality/lint-class-attributes.mjs',
+            'phpstan config'           => 'Resources/Quality/phpstan.neon',
+            'phpunit xml renderer'     => 'Resources/Testing/renderPhpunitXml.php',
+            'prettier config'          => 'Resources/Quality/prettier.config.mjs',
+            'psbits-cgl skill'         => 'Resources/Skill/psbits-cgl/',
+            'psbits-foundation skill'  => 'Resources/Skill/psbits-foundation/',
+            'psbits-qa skill'          => 'Resources/Skill/psbits-qa/',
+            'psbits-v14-compat skill'  => 'Resources/Skill/psbits-v14-compat/',
+            'test matrix scripts'      => 'Resources/Testing/Scripts/',
+            'typoscript-lint config'   => 'Resources/Quality/typoscript-lint.yml',
+            'yamllint config'          => 'Resources/Quality/yamllint.yml',
+        ] as $label => $path) {
+            printf("  %-24s %s\n", $label . ':', $root . '/' . $path);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Prints the expected standard of an aggregate in the composer.json
+     * formatting (plus the missing and extra members), so a deviation can
+     * be aligned manually.
+     *
+     * @param array{missing: list<string>, extra: list<string>} $deviation
+     * @param list<string>                                      $standard
+     */
+    private static function printAggregateStandard(string $aggregate, array $deviation, array $standard): void
+    {
+        if ([] !== $deviation['missing']) {
+            echo '  missing: ' . implode(', ', $deviation['missing']) . "\n";
+        }
+
+        if ([] !== $deviation['extra']) {
+            echo '  extra: ' . implode(', ', $deviation['extra']) . "\n";
+        }
+
+        $members = [];
+
+        foreach ($standard as $index => $member) {
+            $members[] = '      ' . json_encode($member) . ($index === count($standard) - 1 ? '' : ',');
+        }
+
+        echo "  expected standard for {$aggregate}:\n";
+        echo "    \"{$aggregate}\": [\n" . implode("\n", $members) . "\n    ]\n";
+    }
+
+    private static function relative(string $root, string $path): string
+    {
+        $prefix = $root . '/';
+
+        return str_starts_with($path, $prefix) ? substr($path, strlen($prefix)) : $path;
+    }
+
+    /**
+     * @throws UnexpectedValueException
+     */
+    private static function remove(string $path): void
+    {
+        if (is_dir($path) && !is_link($path)) {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST,
+            );
+
+            foreach ($iterator as $item) {
+                $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+            }
+        }
+        is_dir($path) && !is_link($path) ? rmdir($path) : unlink($path);
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    private static function repoRoot(): string
+    {
+        $root = getenv('PSBITS_QA_REPO_ROOT');
+
+        if (false === $root || '' === $root) {
+            $root = getcwd();
+        }
+
+        if (!is_dir($root) || !file_exists($root . '/composer.json')) {
+            throw new RuntimeException('repository root with a composer.json not found at ' . $root);
+        }
+
+        return $root;
+    }
+
+    /**
+     * @param array{name: string, command: string, condition: string} $script
+     * @throws UnexpectedValueException
+     */
+    private static function scriptApplicable(array $script, string $root): bool
+    {
+        $condition = $script['condition'];
+
+        if (str_starts_with($condition, 'npm:')) {
+            return self::npmScriptDefined($root, substr($condition, strlen('npm:')));
+        }
+
+        if ('xlf' === $condition) {
+            return [] !== XlfSorter::findFiles($root);
+        }
+
+        if ('phpstan' === $condition) {
+            return is_file($root . '/Build/Quality/phpstan.neon.dist');
+        }
+
+        if ('csfixer' === $condition) {
+            return is_file($root . '/Build/Quality/.php-cs-fixer.dist.php');
+        }
+
+        if ('configuration' === $condition) {
+            return is_dir($root . '/Configuration');
+        }
+
+        if ('typoscript' === $condition) {
+            return self::hasTyposcriptFiles($root);
+        }
+
+        return 'always' === $condition;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function skillLinks(string $root): array
+    {
+        $links = [];
+
+        foreach (self::SKILLS as $skill) {
+            $links[$skill] = $root . '/.opencode/skills/' . $skill;
+        }
+
+        return $links;
+    }
+
+    private static function skillTarget(string $skill): string
+    {
+        return '../../.Build/vendor/psbits/qa/Resources/Skill/' . $skill;
     }
 
     /**
@@ -434,184 +611,6 @@ final class Application
         return 0;
     }
 
-    private static function packageRoot(): string
-    {
-        return dirname(__DIR__, 2);
-    }
-
-    private static function paths(): int
-    {
-        $root = self::packageRoot();
-
-        foreach ([
-            'caller workflow template' => 'Resources/CI/ci.yml',
-            'cs-fixer config'          => 'Resources/Quality/cs-fixer.dist.php',
-            'docker setup'             => 'Resources/Testing/Docker/',
-            'git hooks'                => 'Resources/GitHooks/',
-            'lint-class-attributes'    => 'Resources/Quality/lint-class-attributes.mjs',
-            'phpstan config'           => 'Resources/Quality/phpstan.neon',
-            'phpunit xml renderer'     => 'Resources/Testing/renderPhpunitXml.php',
-            'prettier config'          => 'Resources/Quality/prettier.config.mjs',
-            'psbits-cgl skill'         => 'Resources/Skill/psbits-cgl/',
-            'psbits-foundation skill'  => 'Resources/Skill/psbits-foundation/',
-            'psbits-qa skill'          => 'Resources/Skill/psbits-qa/',
-            'psbits-v14-compat skill'  => 'Resources/Skill/psbits-v14-compat/',
-            'test matrix scripts'      => 'Resources/Testing/Scripts/',
-            'typoscript-lint config'   => 'Resources/Quality/typoscript-lint.yml',
-            'yamllint config'          => 'Resources/Quality/yamllint.yml',
-        ] as $label => $path) {
-            printf("  %-24s %s\n", $label . ':', $root . '/' . $path);
-        }
-
-        return 0;
-    }
-
-    /**
-     * Prints the expected standard of an aggregate in the composer.json
-     * formatting (plus the missing and extra members), so a deviation can
-     * be aligned manually.
-     *
-     * @param array{missing: list<string>, extra: list<string>} $deviation
-     * @param list<string> $standard
-     */
-    private static function printAggregateStandard(string $aggregate, array $deviation, array $standard): void
-    {
-        if ([] !== $deviation['missing']) {
-            echo '  missing: ' . implode(', ', $deviation['missing']) . "\n";
-        }
-
-        if ([] !== $deviation['extra']) {
-            echo '  extra: ' . implode(', ', $deviation['extra']) . "\n";
-        }
-
-        $members = [];
-
-        foreach ($standard as $index => $member) {
-            $members[] = '      ' . json_encode($member) . ($index === count($standard) - 1 ? '' : ',');
-        }
-
-        echo "  expected standard for {$aggregate}:\n";
-        echo "    \"{$aggregate}\": [\n" . implode("\n", $members) . "\n    ]\n";
-    }
-
-    private static function relative(string $root, string $path): string
-    {
-        $prefix = $root . '/';
-
-        return str_starts_with($path, $prefix) ? substr($path, strlen($prefix)) : $path;
-    }
-
-    /**
-     * @throws UnexpectedValueException
-     */
-    private static function remove(string $path): void
-    {
-        if (is_dir($path) && !is_link($path)) {
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::CHILD_FIRST,
-            );
-
-            foreach ($iterator as $item) {
-                $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
-            }
-        }
-        is_dir($path) && !is_link($path) ? rmdir($path) : unlink($path);
-    }
-
-    /**
-     * @throws RuntimeException
-     */
-    private static function repoRoot(): string
-    {
-        $root = getenv('PSBITS_QA_REPO_ROOT');
-
-        if (false === $root || '' === $root) {
-            $root = getcwd();
-        }
-
-        if (!is_dir($root) || !file_exists($root . '/composer.json')) {
-            throw new RuntimeException('repository root with a composer.json not found at ' . $root);
-        }
-
-        return $root;
-    }
-
-    /**
-     * @param array{name: string, command: string, condition: string} $script
-     *
-     * @throws UnexpectedValueException
-     */
-    private static function scriptApplicable(array $script, string $root): bool
-    {
-        $condition = $script['condition'];
-
-        if (str_starts_with($condition, 'npm:')) {
-            return self::npmScriptDefined($root, substr($condition, strlen('npm:')));
-        }
-
-        if ('xlf' === $condition) {
-            return [] !== XlfSorter::findFiles($root);
-        }
-
-        if ('phpstan' === $condition) {
-            return is_file($root . '/Build/Quality/phpstan.neon.dist');
-        }
-
-        if ('csfixer' === $condition) {
-            return is_file($root . '/Build/Quality/.php-cs-fixer.dist.php');
-        }
-
-        if ('configuration' === $condition) {
-            return is_dir($root . '/Configuration');
-        }
-
-        if ('typoscript' === $condition) {
-            return self::hasTyposcriptFiles($root);
-        }
-
-        return 'always' === $condition;
-    }
-
-    /**
-     * Whether the caller package.json defines the given npm script - the
-     * composer scripts for the node tooling are thin proxies and only apply
-     * when the npm script they wrap exists.
-     */
-    private static function npmScriptDefined(string $root, string $script): bool
-    {
-        $file = $root . '/package.json';
-
-        if (!is_file($file)) {
-            return false;
-        }
-
-        $data = json_decode((string) file_get_contents($file), true);
-
-        return is_array($data)
-            && is_array($data['scripts'] ?? null)
-            && array_key_exists($script, $data['scripts']);
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private static function skillLinks(string $root): array
-    {
-        $links = [];
-
-        foreach (self::SKILLS as $skill) {
-            $links[$skill] = $root . '/.opencode/skills/' . $skill;
-        }
-
-        return $links;
-    }
-
-    private static function skillTarget(string $skill): string
-    {
-        return '../../.Build/vendor/psbits/qa/Resources/Skill/' . $skill;
-    }
-
     /**
      * Keeps the caller composer.json scripts in sync with the shared QA
      * scripts: the applicable shared scripts are added when missing, the
@@ -663,7 +662,7 @@ final class Application
 
         if ($changed) {
             $data['scripts'] = $scripts;
-            $encoded = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $encoded         = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 
             if (false === file_put_contents($file, $encoded)) {
                 throw new RuntimeException('could not write ' . $file);
@@ -675,6 +674,7 @@ final class Application
 
             if ([] === $deviation['missing'] && [] === $deviation['extra']) {
                 echo "aggregate {$aggregate} unchanged\n";
+
                 continue;
             }
 
@@ -715,6 +715,7 @@ final class Application
             if (!isset($scripts[$aggregate])) {
                 echo "FAIL: {$aggregate} missing (run qa sync and commit)\n";
                 $failed = 1;
+
                 continue;
             }
 

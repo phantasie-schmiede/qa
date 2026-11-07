@@ -16,8 +16,6 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 use function method_exists;
 
 /**
- * Trait LanguageStackSeeder
- *
  * Pre-seeds the language service factory singleton with a language service that serves caller-supplied
  * labels, which the core language stack cannot load in unit tests. Omit the labels to seed a language
  * service with the default mock responses. The consuming test case must set

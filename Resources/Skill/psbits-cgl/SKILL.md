@@ -164,3 +164,18 @@ flag, so a malformed payload or an unencodable value fails with a
   `@throws JsonException` (see 3) and import it with
   `use JsonException;` (see 8).
 - AI-side only - no fixer or PHPStan rule enforces the flag.
+
+### 13. Method docblocks are description, blank line, sorted tags
+
+The docblock of a method or function carries the description first, then
+one blank star line, then the tags as one block without blank lines in
+between: the tags are sorted alphabetically by tag name (`@param`,
+`@return`, `@see`, `@template`, `@throws`, `@var`), the `@param` lines
+keep their parameter order, and the `@throws` lines their name-sorted
+order (see 3). No blank star line stands directly after the opening
+`/**` or directly before the closing `*/`, and a description line
+never starts with `@` (the tooling would parse it as a tag).
+Tooling: `composer fix:throws` rewrites the docblocks to this layout,
+`phpdoc_order` and `phpdoc_separation` (php-cs-fixer) enforce it in
+`lint:php` / `fix:php`, and `PSBits/empty_comments` drops the stray
+blank star lines and the empty shells they leave behind.

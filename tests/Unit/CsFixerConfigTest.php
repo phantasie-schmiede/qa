@@ -83,6 +83,19 @@ final class CsFixerConfigTest extends TestCase
         self::assertArrayHasKey('PSBits/typed_constant', $rules);
         self::assertArrayHasKey('concat_space', $rules);
         self::assertArrayNotHasKey('native_function_invocation', $rules);
+        self::assertSame(
+            [
+                'order' => ['param', 'return', 'see', 'template', 'throws', 'var'],
+            ],
+            $rules['phpdoc_order'],
+        );
+        self::assertSame(
+            [
+                'groups'                    => [['param', 'return', 'see', 'template', 'throws', 'var']],
+                'skip_unlisted_annotations' => true,
+            ],
+            $rules['phpdoc_separation'],
+        );
 
         $files = [];
 
