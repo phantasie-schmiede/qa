@@ -17,7 +17,9 @@ not in the repository (see the `psbits-qa` skill for the layout).
   `fix:json` (Prettier for the package.json), `fix:throws` (the @throws
   cascade loop, which writes short names + the missing `use` statements
   itself), `fix:xlf`, `fix:php` (the php-cs-fixer run; its
-  `PSBits/empty_comments` drops the empty docblock shells and its
+  `phpdoc_order` and `phpdoc_separation` sort the docblock tags and drop
+  the blank lines between them, its `PSBits/empty_comments` drops the
+  stray blank star lines and the empty docblock shells, and its
   `PSBits/function_imports` converts any backslash-prefixed global
   function call into a `use function` import).
 - `composer fix:throws` / `composer lint:xlf` / `composer fix:xlf` - the
@@ -39,9 +41,11 @@ to the file itself: an exception from the method's own namespace needs
 no import, an already imported one is reused, and a colliding short
 name gets a descriptive alias (last non-generic namespace segment +
 class name, e.g. `ConsoleInvalidArgumentException` - see the name
-conflict rule in `SKILL.md`, 8). The output is complete house style on
-its own; `fix:all` still runs `fix:throws` before `fix:php`, which then
-only normalizes import order and whitespace.
+conflict rule in `SKILL.md`, 8). Every rewritten docblock follows the
+house layout on its own (see `SKILL.md`, 13: description, one blank
+star line, the tags sorted alphabetically without blank lines in
+between); `fix:all` still runs `fix:throws` before `fix:php`, which
+then only normalizes import order and whitespace.
 
 ## The PERFORMANCE_FUNCTIONS list
 

@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Testing\Fixtures\InMemoryListenerProvider;
 
 final class InMemoryListenerProviderTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testNoListenersAreReturnedForAnUnknownEvent(): void
     {
         $provider = new InMemoryListenerProvider();
@@ -14,6 +18,9 @@ final class InMemoryListenerProviderTest extends TestCase
         self::assertSame([], iterator_to_array($provider->getListenersForEvent(new ProviderTestEvent())));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testTheListenerOfTheEventClassIsReturned(): void
     {
         $provider = new InMemoryListenerProvider();
@@ -23,6 +30,9 @@ final class InMemoryListenerProviderTest extends TestCase
         self::assertSame([$listener], iterator_to_array($provider->getListenersForEvent(new ProviderTestEvent())));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testTheListenersOfParentClassesAndInterfacesAreReturned(): void
     {
         $provider  = new InMemoryListenerProvider();

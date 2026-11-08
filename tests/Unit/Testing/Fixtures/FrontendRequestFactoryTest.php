@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\Exception;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Testing\Fixtures\FrontendRequestFactory;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
@@ -12,6 +14,11 @@ use TYPO3\CMS\Extbase\Mvc\Request;
 
 final class FrontendRequestFactoryTest extends TestCase
 {
+    /**
+     * @throws InvalidArgumentException
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testCreateExtbaseRequestWrapsTheFrontendRequest(): void
     {
         $request = FrontendRequestFactory::createExtbaseRequest(
@@ -32,6 +39,11 @@ final class FrontendRequestFactoryTest extends TestCase
         self::assertSame(SystemEnvironmentBuilder::REQUESTTYPE_FE, $request->getAttribute('applicationType'));
     }
 
+    /**
+     * @throws InvalidArgumentException
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testCreateFrontendRequestBuildsARequestWithTheFrameworkConfiguration(): void
     {
         $request = FrontendRequestFactory::createFrontendRequest('tx_testextension');
@@ -54,6 +66,10 @@ final class FrontendRequestFactoryTest extends TestCase
         self::assertSame([], $typoscript->getConfigArray());
     }
 
+    /**
+     * @throws InvalidArgumentException
+     * @throws ExpectationFailedException
+     */
     public function testTheViewSetupAndAdditionalAttributesAreProvided(): void
     {
         $request = FrontendRequestFactory::createFrontendRequest(

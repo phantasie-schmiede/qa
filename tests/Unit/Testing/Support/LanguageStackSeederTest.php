@@ -2,9 +2,14 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Event\NoPreviousThrowableException;
+use PHPUnit\Framework\Exception;
+use PHPUnit\Framework\ExpectationFailedException;
+use PHPUnit\Framework\InvalidArgumentException;
 use PSBits\Qa\Testing\Fixtures\FakeLanguageServiceFactory;
 use PSBits\Qa\Testing\Support\LanguageStackSeeder;
 use TYPO3\CMS\Core\Cache\CacheManager;
+use TYPO3\CMS\Core\Cache\Exception\NoSuchCacheException;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Localization\LanguageService;
 use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
@@ -18,15 +23,29 @@ final class LanguageStackSeederTest extends UnitTestCase
 
     protected bool $resetSingletonInstances = true;
 
+    /**
+     * @throws NoPreviousThrowableException
+     * @throws Exception
+     * @throws InvalidArgumentException
+     * @throws PHPUnit\Framework\MockObject\Exception
+     * @throws NoSuchCacheException
+     */
     public function testTheCacheManagerSingletonServesThePreSeededService(): void
     {
         $this->seedLanguageStack();
 
         $cacheManager = GeneralUtility::getSingletonInstances()[CacheManager::class] ?? null;
-        self::assertNotNull($cacheManager);
+        self::assertInstanceOf(CacheManager::class, $cacheManager);
         self::assertInstanceOf(FrontendInterface::class, $cacheManager->getCache('core'));
     }
 
+    /**
+     * @throws NoPreviousThrowableException
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws InvalidArgumentException
+     * @throws PHPUnit\Framework\MockObject\Exception
+     */
     public function testTheLanguageServiceFactorySingletonServesTheLabelledService(): void
     {
         $this->seedLanguageStack(static fn(string $key): string => 'Label ' . $key);

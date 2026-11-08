@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
+use Random\RandomException;
 
 final class RenderPhpunitXmlTest extends TestCase
 {
     private string $root;
 
+    /**
+     * @throws RandomException
+     */
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/psbits-qa-fixture-' . bin2hex(random_bytes(6));
@@ -20,11 +25,19 @@ final class RenderPhpunitXmlTest extends TestCase
         file_put_contents($this->root . '/composer.json', "{}\n");
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     protected function tearDown(): void
     {
         $this->removeTree($this->root);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws UnexpectedValueException
+     * @throws ValueError
+     */
     public function testFailsWithoutAnySuiteDirectory(): void
     {
         $this->removeTree($this->root . '/Tests');
@@ -33,6 +46,10 @@ final class RenderPhpunitXmlTest extends TestCase
         self::assertStringContainsString('no Tests/Unit or Tests/Functional', $output);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
     public function testRenderedXmlMatchesTheCommittedReferenceTemplates(): void
     {
         [$code, ] = $this->runRenderer();
@@ -54,24 +71,33 @@ final class RenderPhpunitXmlTest extends TestCase
         }
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
     public function testRendersUnitAndFunctionalWithAbsolutePaths(): void
     {
         [$code, ] = $this->runRenderer();
         self::assertSame(0, $code);
 
         $unit = simplexml_load_file($this->root . '/.Build/phpunit/UnitTests.xml');
-        self::assertNotNull($unit);
+        self::assertNotFalse($unit);
         self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/UnitTestsBootstrap.php', (string) $unit['bootstrap']);
         self::assertSame($this->root . '/.Build/.phpunit.cache', (string) $unit['cacheDirectory']);
         self::assertSame($this->root . '/Tests/Unit', (string) $unit->testsuites->testsuite->directory);
         self::assertSame($this->root . '/Classes', (string) $unit->source->include->directory);
 
         $functional = simplexml_load_file($this->root . '/.Build/phpunit/FunctionalTests.xml');
-        self::assertNotNull($functional);
+        self::assertNotFalse($functional);
         self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/FunctionalTestsBootstrap.php', (string) $functional['bootstrap']);
         self::assertSame($this->root . '/Tests/Functional', (string) $functional->testsuites->testsuite->directory);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws UnexpectedValueException
+     * @throws ValueError
+     */
     public function testSkipsMissingFunctionalSuite(): void
     {
         $this->removeTree($this->root . '/Tests/Functional');
@@ -82,6 +108,9 @@ final class RenderPhpunitXmlTest extends TestCase
         self::assertFileDoesNotExist($this->root . '/.Build/phpunit/FunctionalTests.xml');
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     private function removeTree(string $path): void
     {
         if (!is_dir($path)) {
@@ -99,7 +128,10 @@ final class RenderPhpunitXmlTest extends TestCase
         rmdir($path);
     }
 
-    /** @return array{0: int, 1: string} */
+    /**
+     * @return array{0: int, 1: string}
+     * @throws ValueError
+     */
     private function runRenderer(): array
     {
         $output = [];

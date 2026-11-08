@@ -24,6 +24,9 @@ class InMemoryListenerProvider implements ListenerProviderInterface
         $this->listeners[$event][] = $listener;
     }
 
+    /**
+     * @return iterable<callable>
+     */
     public function getListenersForEvent(object $event): iterable
     {
         $eventClasses = array_merge(

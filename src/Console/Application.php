@@ -10,20 +10,21 @@ use PSBits\Qa\Quality\XlfSorter;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
-
 use UnexpectedValueException;
+
 use function array_diff;
 use function array_filter;
 use function array_key_exists;
 use function array_keys;
+use function array_merge;
 use function array_values;
 use function chmod;
 use function count;
 use function dirname;
 use function file_get_contents;
 use function file_put_contents;
-use function in_array;
 use function implode;
+use function in_array;
 use function is_array;
 use function is_dir;
 use function is_file;
@@ -33,22 +34,32 @@ use function ltrim;
 use function mkdir;
 use function rmdir;
 use function sort;
-use function strcmp;
 use function str_starts_with;
+use function strcmp;
 use function strlen;
-use function substr;
 use function strtolower;
+use function substr;
 use function unlink;
 
 final class Application
 {
-    /** @var string[] shared skills installed as symlinks by qa sync */
-    private const array SKILLS = [
-        'psbits-qa',
-        'psbits-cgl',
-        'psbits-foundation',
-        'psbits-v14-compat',
-    ];
+    /**
+     * The canonical fix:all order: the repository formatters first, then
+     * the docblock and XLIFF fixers, and finally fix:php, which normalizes
+     * the import order and whitespace of what the other fixers wrote.
+     *
+     * @var list<string>
+     */
+    private const array FIX_ALL_ORDER = ['fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json', 'fix:throws', 'fix:xlf', 'fix:php'];
+
+    /**
+     * The canonical lint:all members besides the repository's own lint:*
+     * scripts; a member is part of the standard only when the referenced
+     * script exists in the repository.
+     *
+     * @var list<string>
+     */
+    private const array LINT_ALL_MEMBERS = ['@analyze:php', '@audit:composer', '@validate:composer'];
 
     /**
      * The shared QA scripts that link adds to the caller composer.json when
@@ -63,46 +74,35 @@ final class Application
      * @var list<array{name: string, command: string, condition: string}>
      */
     private const array SCRIPTS = [
-        ['name' => 'analyze:php', 'command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan'],
-        ['name' => 'audit:composer', 'command' => 'composer audit --abandoned=report', 'condition' => 'always'],
-        ['name' => 'fix:classes', 'command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes'],
-        ['name' => 'fix:composer', 'command' => 'composer normalize', 'condition' => 'always'],
-        ['name' => 'fix:htmlxml', 'command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml'],
-        ['name' => 'fix:json', 'command' => 'npm run fix:json', 'condition' => 'npm:fix:json'],
-        ['name' => 'fix:php', 'command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose', 'condition' => 'csfixer'],
-        ['name' => 'fix:throws', 'command' => '.Build/bin/qa throws-fix', 'condition' => 'phpstan'],
-        ['name' => 'fix:xlf', 'command' => '.Build/bin/qa xlf-fix', 'condition' => 'xlf'],
-        ['name' => 'lint:classes', 'command' => 'npm run lint:classes', 'condition' => 'npm:lint:classes'],
-        ['name' => 'lint:composer', 'command' => 'composer normalize --dry-run --diff --no-check-lock --no-update-lock', 'condition' => 'always'],
-        ['name' => 'lint:htmlxml', 'command' => 'npm run lint:htmlxml', 'condition' => 'npm:lint:htmlxml'],
-        ['name' => 'lint:js', 'command' => 'npm run lint:js', 'condition' => 'npm:lint:js'],
-        ['name' => 'lint:json', 'command' => 'npm run lint:json', 'condition' => 'npm:lint:json'],
-        ['name' => 'lint:php', 'command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose', 'condition' => 'csfixer'],
-        ['name' => 'lint:scss', 'command' => 'npm run lint:scss', 'condition' => 'npm:lint:scss'],
-        ['name' => 'lint:typoscript', 'command' => 'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript', 'condition' => 'typoscript'],
-        ['name' => 'lint:xlf', 'command' => '.Build/bin/qa xlf-check', 'condition' => 'xlf'],
-        ['name' => 'lint:yaml', 'command' => 'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', 'condition' => 'configuration'],
-        ['name' => 'validate:composer', 'command' => 'composer validate --no-check-publish', 'condition' => 'always'],
+        ['command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan', 'name' => 'analyze:php'],
+        ['command' => 'composer audit --abandoned=report', 'condition' => 'always', 'name' => 'audit:composer'],
+        ['command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes', 'name' => 'fix:classes'],
+        ['command' => 'composer normalize', 'condition' => 'always', 'name' => 'fix:composer'],
+        ['command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml', 'name' => 'fix:htmlxml'],
+        ['command' => 'npm run fix:json', 'condition' => 'npm:fix:json', 'name' => 'fix:json'],
+        ['command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose', 'condition' => 'csfixer', 'name' => 'fix:php'],
+        ['command' => '.Build/bin/qa throws-fix', 'condition' => 'phpstan', 'name' => 'fix:throws'],
+        ['command' => '.Build/bin/qa xlf-fix', 'condition' => 'xlf', 'name' => 'fix:xlf'],
+        ['command' => 'npm run lint:classes', 'condition' => 'npm:lint:classes', 'name' => 'lint:classes'],
+        ['command' => 'composer normalize --dry-run --diff --no-check-lock --no-update-lock', 'condition' => 'always', 'name' => 'lint:composer'],
+        ['command' => 'npm run lint:htmlxml', 'condition' => 'npm:lint:htmlxml', 'name' => 'lint:htmlxml'],
+        ['command' => 'npm run lint:js', 'condition' => 'npm:lint:js', 'name' => 'lint:js'],
+        ['command' => 'npm run lint:json', 'condition' => 'npm:lint:json', 'name' => 'lint:json'],
+        ['command' => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose', 'condition' => 'csfixer', 'name' => 'lint:php'],
+        ['command' => 'npm run lint:scss', 'condition' => 'npm:lint:scss', 'name' => 'lint:scss'],
+        ['command' => 'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript', 'condition' => 'typoscript', 'name' => 'lint:typoscript'],
+        ['command' => '.Build/bin/qa xlf-check', 'condition' => 'xlf', 'name' => 'lint:xlf'],
+        ['command' => 'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', 'condition' => 'configuration', 'name' => 'lint:yaml'],
+        ['command' => 'composer validate --no-check-publish', 'condition' => 'always', 'name' => 'validate:composer'],
     ];
 
-    /**
-     * The canonical lint:all members besides the repository's own lint:*
-     * scripts; a member is part of the standard only when the referenced
-     * script exists in the repository.
-     *
-     * @var list<string>
-     */
-    private const array LINT_ALL_MEMBERS = ['@analyze:php', '@audit:composer', '@validate:composer'];
-
-    /**
-     * The canonical fix:all order: the repository formatters first, then
-     * the docblock and XLIFF fixers, and finally fix:php, which normalizes
-     * the import order and whitespace of what the other fixers wrote.
-     *
-     * @var list<string>
-     */
-    private const array FIX_ALL_ORDER = ['fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json', 'fix:throws', 'fix:xlf', 'fix:php'];
-
+    /** @var string[] shared skills installed as symlinks by qa sync */
+    private const array SKILLS = [
+        'psbits-qa',
+        'psbits-cgl',
+        'psbits-foundation',
+        'psbits-v14-compat',
+    ];
     private const string USAGE = <<<text
     Usage:
       qa sync       Sync the package-managed QA state: install the git
@@ -192,10 +192,10 @@ final class Application
     {
         $lintAll = array_values(array_filter(
             self::LINT_ALL_MEMBERS,
-            static fn (string $member): bool => isset($scripts[ltrim($member, '@')]),
+            static fn(string $member): bool => isset($scripts[ltrim($member, '@')]),
         ));
-        $fixAll  = [];
-        $rest    = [];
+        $fixAll = [];
+        $rest   = [];
 
         foreach (array_keys($scripts) as $name) {
             if (str_starts_with($name, 'lint:') && 'lint:all' !== $name) {
@@ -236,7 +236,7 @@ final class Application
     }
 
     /**
-     * @throws UnexpectedValueException
+     * @throws RuntimeException
      */
     private static function check(string $root): int
     {
@@ -283,6 +283,21 @@ final class Application
         return $failed;
     }
 
+    /**
+     * Creates the directory with all missing parent directories when it
+     * does not exist yet. The existence is re-checked after a failed
+     * mkdir, so a concurrent creation by another process is tolerated
+     * instead of reported.
+     *
+     * @throws RuntimeException
+     */
+    private static function ensureDirectory(string $directory): void
+    {
+        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new RuntimeException('could not create ' . $directory);
+        }
+    }
+
     private static function filesIdentical(string $a, string $b): bool
     {
         if (!is_file($a) || !is_file($b)) {
@@ -327,7 +342,7 @@ final class Application
      * the existing key order of all other entries (no re-sorting).
      *
      * @param array<string, list<string>|string> $scripts
-     * @param list<string>|string $value
+     * @param list<string>|string                $value
      * @return array<string, list<string>|string>
      */
     private static function insertSorted(array $scripts, string $name, array|string $value): array
@@ -335,7 +350,7 @@ final class Application
         $result = [];
 
         foreach ($scripts as $key => $existing) {
-            if (!isset($result[$name]) && strcmp((string) $key, $name) > 0) {
+            if (!isset($result[$name]) && 0 < strcmp($key, $name)) {
                 $result[$name] = $value;
             }
             $result[$key] = $existing;
@@ -349,89 +364,23 @@ final class Application
     }
 
     /**
-     * @throws RuntimeException
-     * @throws UnexpectedValueException
+     * Whether the caller package.json defines the given npm script - the
+     * composer scripts for the node tooling are thin proxies and only apply
+     * when the npm script they wrap exists.
      */
-    private static function sync(string $root): int
+    private static function npmScriptDefined(string $root, string $script): bool
     {
-        $hooks = $root . '/.git/hooks';
+        $file = $root . '/package.json';
 
-        if (!is_dir($hooks) && !mkdir($hooks, 0755, true)) {
-            throw new RuntimeException('could not create ' . $hooks);
+        if (!is_file($file)) {
+            return false;
         }
 
-        $hook   = $hooks . '/pre-commit';
-        $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
+        $data = json_decode((string) file_get_contents($file), true);
 
-        if (!self::filesIdentical($hook, $source)) {
-            if (false === copy($source, $hook) || !chmod($hook, 0755)) {
-                throw new RuntimeException('could not install pre-commit hook to ' . $hook);
-            }
-
-            echo "installed pre-commit hook\n";
-        } else {
-            echo "pre-commit hook unchanged\n";
-        }
-
-        foreach (self::skillLinks($root) as $skill => $link) {
-            $target = self::skillTarget($skill);
-            $linkOk = is_link($link) && readlink($link) === $target && is_dir($link);
-
-            if ($linkOk) {
-                echo "skill link unchanged: {$skill}\n";
-            } else {
-                if (is_link($link)) {
-                    unlink($link);
-                } elseif (file_exists($link)) {
-                    self::remove($link);
-                }
-
-                $linkDir = dirname($link);
-
-                if (!is_dir($linkDir) && !mkdir($linkDir, 0755, true)) {
-                    throw new RuntimeException('could not create ' . $linkDir);
-                }
-
-                if (!symlink($target, $link)) {
-                    throw new RuntimeException('could not create skill link at ' . $link);
-                }
-
-                if (!is_dir($link)) {
-                    throw new RuntimeException('skill link target does not resolve: ' . $target . ' (run composer install first)');
-                }
-
-                echo "installed skill link: {$skill}\n";
-            }
-        }
-
-        /*
-         * The caller workflow is created on first run and kept in sync with
-         * the template from then on, so every repository opts into the
-         * shared CI with the next composer install.
-         */
-        $workflow = self::callerWorkflow($root);
-        $source   = self::callerWorkflowTemplate();
-        $existed  = file_exists($workflow);
-
-        if (self::filesIdentical($workflow, $source)) {
-            echo 'caller workflow unchanged' . "\n";
-        } else {
-            $workflowDir = dirname($workflow);
-
-            if (!is_dir($workflowDir) && !mkdir($workflowDir, 0755, true)) {
-                throw new RuntimeException('could not create ' . $workflowDir);
-            }
-
-            if (false === copy($source, $workflow)) {
-                throw new RuntimeException('could not sync caller workflow to ' . $workflow);
-            }
-
-            echo $existed ? 'synced caller workflow' : 'installed caller workflow' . "\n";
-        }
-
-        self::syncScripts($root);
-
-        return 0;
+        return is_array($data)
+            && is_array($data['scripts'] ?? null)
+            && array_key_exists($script, $data['scripts']);
     }
 
     private static function packageRoot(): string
@@ -472,7 +421,7 @@ final class Application
      * be aligned manually.
      *
      * @param array{missing: list<string>, extra: list<string>} $deviation
-     * @param list<string> $standard
+     * @param list<string>                                      $standard
      */
     private static function printAggregateStandard(string $aggregate, array $deviation, array $standard): void
     {
@@ -539,7 +488,7 @@ final class Application
 
     /**
      * @param array{name: string, command: string, condition: string} $script
-     *
+     * @throws RuntimeException
      * @throws UnexpectedValueException
      */
     private static function scriptApplicable(array $script, string $root): bool
@@ -574,26 +523,6 @@ final class Application
     }
 
     /**
-     * Whether the caller package.json defines the given npm script - the
-     * composer scripts for the node tooling are thin proxies and only apply
-     * when the npm script they wrap exists.
-     */
-    private static function npmScriptDefined(string $root, string $script): bool
-    {
-        $file = $root . '/package.json';
-
-        if (!is_file($file)) {
-            return false;
-        }
-
-        $data = json_decode((string) file_get_contents($file), true);
-
-        return is_array($data)
-            && is_array($data['scripts'] ?? null)
-            && array_key_exists($script, $data['scripts']);
-    }
-
-    /**
      * @return array<string, string>
      */
     private static function skillLinks(string $root): array
@@ -613,6 +542,86 @@ final class Application
     }
 
     /**
+     * @throws RuntimeException
+     * @throws UnexpectedValueException
+     */
+    private static function sync(string $root): int
+    {
+        $hooks = $root . '/.git/hooks';
+
+        self::ensureDirectory($hooks);
+
+        $hook   = $hooks . '/pre-commit';
+        $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
+
+        if (!self::filesIdentical($hook, $source)) {
+            if (false === copy($source, $hook) || !chmod($hook, 0755)) {
+                throw new RuntimeException('could not install pre-commit hook to ' . $hook);
+            }
+
+            echo "installed pre-commit hook\n";
+        } else {
+            echo "pre-commit hook unchanged\n";
+        }
+
+        foreach (self::skillLinks($root) as $skill => $link) {
+            $target = self::skillTarget($skill);
+            $linkOk = is_link($link) && readlink($link) === $target && is_dir($link);
+
+            if ($linkOk) {
+                echo "skill link unchanged: {$skill}\n";
+            } else {
+                if (is_link($link)) {
+                    unlink($link);
+                } elseif (file_exists($link)) {
+                    self::remove($link);
+                }
+
+                $linkDir = dirname($link);
+
+                self::ensureDirectory($linkDir);
+
+                if (!symlink($target, $link)) {
+                    throw new RuntimeException('could not create skill link at ' . $link);
+                }
+
+                if (!is_dir($link)) {
+                    throw new RuntimeException('skill link target does not resolve: ' . $target . ' (run composer install first)');
+                }
+
+                echo "installed skill link: {$skill}\n";
+            }
+        }
+
+        /*
+         * The caller workflow is created on first run and kept in sync with
+         * the template from then on, so every repository opts into the
+         * shared CI with the next composer install.
+         */
+        $workflow = self::callerWorkflow($root);
+        $source   = self::callerWorkflowTemplate();
+        $existed  = file_exists($workflow);
+
+        if (self::filesIdentical($workflow, $source)) {
+            echo 'caller workflow unchanged' . "\n";
+        } else {
+            $workflowDir = dirname($workflow);
+
+            self::ensureDirectory($workflowDir);
+
+            if (false === copy($source, $workflow)) {
+                throw new RuntimeException('could not sync caller workflow to ' . $workflow);
+            }
+
+            echo $existed ? 'synced caller workflow' : 'installed caller workflow' . "\n";
+        }
+
+        self::syncScripts($root);
+
+        return 0;
+    }
+
+    /**
      * Keeps the caller composer.json scripts in sync with the shared QA
      * scripts: the applicable shared scripts are added when missing, the
      * aggregates lint:all, fix:all and qa are created when missing.
@@ -621,7 +630,6 @@ final class Application
      * the expected standard so it can be aligned manually.
      *
      * @throws RuntimeException
-     * @throws UnexpectedValueException
      */
     private static function syncScripts(string $root): void
     {
@@ -663,7 +671,7 @@ final class Application
 
         if ($changed) {
             $data['scripts'] = $scripts;
-            $encoded = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $encoded         = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 
             if (false === file_put_contents($file, $encoded)) {
                 throw new RuntimeException('could not write ' . $file);
@@ -675,6 +683,7 @@ final class Application
 
             if ([] === $deviation['missing'] && [] === $deviation['extra']) {
                 echo "aggregate {$aggregate} unchanged\n";
+
                 continue;
             }
 
@@ -688,7 +697,7 @@ final class Application
      * (CI gate): the applicable shared scripts exist and every aggregate
      * matches the standard.
      *
-     * @throws UnexpectedValueException
+     * @throws RuntimeException
      */
     private static function verifyScripts(string $root): int
     {
@@ -715,6 +724,7 @@ final class Application
             if (!isset($scripts[$aggregate])) {
                 echo "FAIL: {$aggregate} missing (run qa sync and commit)\n";
                 $failed = 1;
+
                 continue;
             }
 
@@ -732,6 +742,9 @@ final class Application
         return $failed;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private static function xlf(string $root, bool $apply): int
     {
         $sorter = new XlfSorter();

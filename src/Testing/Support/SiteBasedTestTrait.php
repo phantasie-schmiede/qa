@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Testing\Support;
 
+use RuntimeException;
 use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -16,8 +17,6 @@ use function str_repeat;
 use function str_replace;
 
 /**
- * Trait SiteBasedTestTrait
- *
  * Writes site configuration files for functional tests.
  *
  * This is a cut-down version of the identically named trait from typo3/cms-core. The core package
@@ -33,6 +32,9 @@ use function str_replace;
  */
 trait SiteBasedTestTrait
 {
+    /**
+     * @return array{base: string, rootPageId: int}
+     */
     protected function buildSiteConfiguration(int $rootPageId, string $base = ''): array
     {
         return [
@@ -41,6 +43,13 @@ trait SiteBasedTestTrait
         ];
     }
 
+    /**
+     * @param array<string, mixed>       $site
+     * @param list<array<string, mixed>> $languages
+     * @param array<string, mixed>       $errorHandling
+     * @param array<string, mixed>       $dependencies
+     * @throws RuntimeException
+     */
     protected function writeSiteConfiguration(
         string $identifier,
         array  $site = [],
@@ -73,6 +82,8 @@ trait SiteBasedTestTrait
      * Renders a site configuration as YAML. A dumper is used on purpose: symfony/yaml is only a
      * transitive dependency of the core packages and its availability differs between the supported
      * majors. The structures written here are plain lists and maps of scalars.
+     *
+     * @param array<array-key, mixed> $data
      */
     private function dumpYaml(array $data, int $level = 0): string
     {

@@ -82,6 +82,24 @@ psbits/crafter where applicable).
 - `bin/qa check` enforces the same in the CI (missing scripts, missing
   aggregates and aggregate deviations all fail the gate).
 
+## The qa package itself (self-lint)
+
+Inside the `psbits/qa` repository, the package is linted with the very
+tooling it ships - its CI `lint` job (single PHP 8.4, runs after the test
+jobs) executes:
+
+- `composer analyze:php` - the root `phpstan.neon.dist` includes the shared
+  baseline `Resources/Quality/phpstan.neon` and analyses `src`, `tests` and
+  `bin/qa`; version-gated core code (v13.4/v14.3) is covered by justified
+  `ignoreErrors` entries with `reportUnmatched: false`, and the
+  conditionally declared `FakeLanguageServiceFactory` fixture is excluded
+  via `excludePaths` (its `class.nonReadOnly` report is not ignorable)
+- `composer lint:composer`
+- `composer lint:php` - the root `.php-cs-fixer.php` calls
+  `CsFixerFactory::create(['src', 'tests', 'Resources'])`, i.e. the same
+  shared CGL configuration the extension repositories use; `bin/qa` is
+  PHPStan-analysed but not style-checked (no `.php` extension)
+
 ## Test matrix (repos with `test:local` / `test:docker`)
 
 The GitHub CI of the extension repositories is the shared workflow

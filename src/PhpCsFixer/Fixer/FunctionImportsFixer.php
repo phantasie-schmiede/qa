@@ -226,7 +226,7 @@ final class FunctionImportsFixer extends AbstractFixer implements WhitespacesAwa
          */
         if (null !== $index && $tokens[$index]->equals(')')) {
             $open   = $tokens->findBlockStart(Tokens::BLOCK_TYPE_PARENTHESIS_BRACE, $index);
-            $before = null !== $open ? $tokens->getPrevMeaningfulToken($open) : null;
+            $before = $tokens->getPrevMeaningfulToken($open);
 
             return null !== $before && $tokens[$before]->isGivenKind([T_CLASS, T_NEW]);
         }

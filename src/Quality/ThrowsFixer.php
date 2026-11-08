@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PSBits\Qa\Quality;
 
 use PSBits\Qa\PhpStan\ThrowsDocblockRule;
+use RuntimeException;
+use ValueError;
 
 use function array_slice;
 use function count;
@@ -49,9 +51,11 @@ final class ThrowsFixer
             /*
              * PHPStan reports trait methods under the file key
              * "Trait.php (in context of class Foo\Bar)"; the applier needs
-             * the bare file path
+             * the bare file path. The context may name an anonymous class
+             * used in a test ("class@anonymous/path/to/Test.php:42"), so
+             * no space after "class" is required.
              */
-            $file = preg_replace('/ \(in context of class [^)]+\)$/', '', (string) $file);
+            $file = preg_replace('/ \(in context of class[^)]*\)$/', '', (string) $file);
 
             foreach (($info['messages'] ?? []) as $message) {
                 if (ThrowsDocblockRule::IDENTIFIER !== ($message['identifier'] ?? null)) {
@@ -69,6 +73,10 @@ final class ThrowsFixer
         return $entries;
     }
 
+    /**
+     * @throws RuntimeException
+     * @throws ValueError
+     */
     public function run(): int
     {
         $phpstan = $this->repoRoot . '/.Build/bin/phpstan';
@@ -155,6 +163,7 @@ final class ThrowsFixer
 
     /**
      * @return null|array<string, mixed> the decoded phpstan JSON
+     * @throws ValueError
      */
     private function analyse(string $phpstan, string $config): ?array
     {
@@ -207,8 +216,9 @@ final class ThrowsFixer
 
     /**
      * @param list<array{file: string, line: int, message: string}> $entries
-     *
      * @return array{fixed: int, skipped: list<string>}
+     * @throws RuntimeException
+     * @throws ValueError
      */
     private function apply(ThrowsDocblockApplier $applier, array $entries): array
     {

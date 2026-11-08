@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use PhpCsFixer\AbstractFixer;
+use PHPUnit\Framework\ExpectationFailedException;
+use PHPUnit\Framework\GeneratorNotSupportedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\AlphabeticalArrayKeysFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\BlockCommentsFixer;
@@ -14,6 +16,11 @@ use PSBits\Qa\PhpCsFixer\Fixer\TypedConstantFixer;
 
 final class FixerNamesTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     * @throws GeneratorNotSupportedException
+     * @throws TypeError
+     */
     public function testFixerDefinitionsAreComplete(): void
     {
         foreach ($this->fixers() as $fixer) {
@@ -24,16 +31,20 @@ final class FixerNamesTest extends TestCase
         }
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws TypeError
+     */
     public function testFixerRuleNamesAreStableAcrossNamespaces(): void
     {
         $expected = [
-            AlphabeticalArrayKeysFixer::class        => 'PSBits/alphabetical_array_keys',
-            BlockCommentsFixer::class                => 'PSBits/block_comments',
-            ClassBlockSeparationFixer::class         => 'PSBits/class_block_separation',
-            EmptyCommentsFixer::class                => 'PSBits/empty_comments',
-            FunctionImportsFixer::class              => 'PSBits/function_imports',
-            PropertyNamesAlignmentFixer::class       => 'PSBits/property_names_alignment',
-            TypedConstantFixer::class                => 'PSBits/typed_constant',
+            AlphabeticalArrayKeysFixer::class  => 'PSBits/alphabetical_array_keys',
+            BlockCommentsFixer::class          => 'PSBits/block_comments',
+            ClassBlockSeparationFixer::class   => 'PSBits/class_block_separation',
+            EmptyCommentsFixer::class          => 'PSBits/empty_comments',
+            FunctionImportsFixer::class        => 'PSBits/function_imports',
+            PropertyNamesAlignmentFixer::class => 'PSBits/property_names_alignment',
+            TypedConstantFixer::class          => 'PSBits/typed_constant',
         ];
         $actual = [];
 

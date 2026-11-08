@@ -1,0 +1,42 @@
+# PHPStan configuration of the qa package itself: the package is analysed
+# with the same shared baseline it ships to the extension repositories.
+#
+# The extension repositories keep a thin Build/Quality/phpstan.neon.dist shim
+# that includes the same baseline and adds the repo-specific parts (paths,
+# excludePaths, ignoreErrors); this file plays that role for the package
+# root.
+
+includes:
+    - Resources/Quality/phpstan.neon
+
+parameters:
+    tmpDir: .Build/phpstan
+    paths:
+        - src
+        - tests
+        - bin/qa
+    excludePaths:
+        # The fixture extends the core LanguageServiceFactory, which is a
+        # readonly class on v14 but a plain class on v13; a child must carry
+        # the same readonly status as its parent, so the class is declared
+        # conditionally. The analyser only sees the installed core and would
+        # report the other branch, and that error is not ignorable.
+        analyse:
+            - src/Testing/Fixtures/FakeLanguageServiceFactory.php
+    ignoreErrors:
+        # LanguageService::translate() only exists on v14 and later; on v13 the
+        # method_exists() gate is false, so the report is only true on the
+        # installed major.
+        -
+          identifier: function.alreadyNarrowedType
+          path: src/Testing/Support/LanguageStackSeeder.php
+          reportUnmatched: false
+        -
+          identifier: function.alreadyNarrowedType
+          path: tests/Unit/Testing/Support/LanguageStackSeederTest.php
+          reportUnmatched: false
+        # The trait is shipped to the extension repositories and is used zero
+        # times within this package.
+        -
+          identifier: trait.unused
+          path: src/Testing/Support/PersistenceSupportTrait.php

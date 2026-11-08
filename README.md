@@ -75,6 +75,16 @@ or the current working directory (composer and CI both run from the repo
 root); the Docker image name derives from `PSBITS_QA_EXTENSION` (default:
 the repository directory name).
 
+## Linting the package itself
+
+The package is linted with the tooling it ships: the root
+`phpstan.neon.dist` includes the shared baseline
+`Resources/Quality/phpstan.neon` (paths `src`, `tests`, `bin/qa`), the root
+`.php-cs-fixer.php` calls `CsFixerFactory::create(['src', 'tests',
+'Resources'])`, and `composer normalize` keeps the `composer.json` clean.
+The CI `lint` job (single PHP 8.4) runs `composer analyze:php`,
+`composer lint:composer` and `composer lint:php`.
+
 ## CLI
 
 ```

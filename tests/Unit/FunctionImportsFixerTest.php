@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\WhitespacesFixerConfig;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\FunctionImportsFixer;
 
 final class FunctionImportsFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -27,6 +31,9 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($once, $this->fix($fixer, $once));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresMethodsWithTheSameName(): void
     {
         $code = <<<'php'
@@ -69,6 +76,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresUnqualifiedMemberCalls(): void
     {
         $code = <<<'php'
@@ -115,6 +125,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testImportsAfterTheExistingImports(): void
     {
         $code = <<<'php'
@@ -145,6 +158,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testImportsAndShortensFullyQualifiedCall(): void
     {
         $code = <<<'php'
@@ -171,6 +187,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testImportsMixedQualifiedAndUnqualifiedCalls(): void
     {
         $code = <<<'php'
@@ -198,6 +217,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testImportsMultipleFunctionsSorted(): void
     {
         $code = <<<'php'
@@ -231,6 +253,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testImportsUnqualifiedCallsOfListedFunctions(): void
     {
         $code = <<<'php'
@@ -262,6 +287,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLeavesClassContextsUntouched(): void
     {
         $code = <<<'php'
@@ -281,6 +309,9 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLeavesGlobalNamespaceFilesUntouched(): void
     {
         $code = <<<'php'
@@ -295,6 +326,9 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLeavesNamespacedFunctionCallsUntouched(): void
     {
         $code = <<<'php'
@@ -311,6 +345,9 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLeavesUnqualifiedCallsOfUnlistedFunctionsUntouched(): void
     {
         $code = <<<'php'
@@ -327,6 +364,9 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testReusesAnExistingFunctionImport(): void
     {
         $code = <<<'php'
@@ -356,6 +396,9 @@ final class FunctionImportsFixerTest extends TestCase
             php, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSkipsFunctionsDeclaredInTheSameNamespace(): void
     {
         $code = <<<'php'
@@ -377,6 +420,9 @@ final class FunctionImportsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new FunctionImportsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSkipsUnqualifiedCallsOfShadowedNames(): void
     {
         $code = <<<'php'

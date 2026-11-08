@@ -17,10 +17,12 @@ use PhpCsFixer\FixerDefinition\CodeSample;
 use PhpCsFixer\FixerDefinition\FixerDefinition;
 use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
 use PhpCsFixer\Preg;
+use PhpCsFixer\PregException;
 use PhpCsFixer\Tokenizer\CT;
 use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
+use ValueError;
 
 use function array_map;
 use function array_merge;
@@ -107,6 +109,10 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
      * Fixes at most one array per round: the [open, close] pairs of the
      * other arrays are stale after a rewrite, so they are re-collected
      * until a round changes nothing.
+     *
+     * @throws LogicException
+     * @throws PregException
+     * @throws ValueError
      */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {
@@ -135,6 +141,7 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
      * side-effect-free value, i.e. when it must not be moved.
      *
      * @return null|array{key: string, first: int, last: int}
+     * @throws PregException
      */
     private function describeItem(Tokens $tokens, int $start, int $end): ?array
     {
@@ -247,6 +254,9 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
      * indent of each line is taken from the original line of that item,
      * so a per-item indentation is preserved; a single-line array keeps
      * the whitespace padding around its items.
+     *
+     * @throws PregException
+     * @throws ValueError
      */
     private function fixArray(Tokens $tokens, int $open, int $close): bool
     {
@@ -324,6 +334,7 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
      * fit the shape this fixer handles, so the whole array is left alone.
      *
      * @return null|list<array{key: string, first: int, last: int}>
+     * @throws PregException
      */
     private function getItems(Tokens $tokens, int $open, int $close): ?array
     {
@@ -383,6 +394,8 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
      * can span several lines (a whitespace token usually does), so the
      * tokens are walked backwards until one contains a newline; the
      * indent is what follows its last newline.
+     *
+     * @throws ValueError
      */
     private function getLineIndent(Tokens $tokens, int $index): string
     {
@@ -480,6 +493,9 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         return $this->skipWhitespace($tokens, $name + 1, $end, true) > $end;
     }
 
+    /**
+     * @throws PregException
+     */
     private function isConstantName(Token $token): bool
     {
         return Preg::match('/^[A-Z_][A-Z0-9_]*$/', $token->getContent());
@@ -534,6 +550,8 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
     /**
      * Checks whether an array value consists only of reads and literals, so
      * reordering the item cannot change the program's side effect order.
+     *
+     * @throws PregException
      */
     private function isSideEffectFreeValue(Tokens $tokens, int $start, int $end): bool
     {

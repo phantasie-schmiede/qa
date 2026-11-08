@@ -18,6 +18,7 @@ use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
 use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
+use ValueError;
 
 use function array_map;
 use function implode;
@@ -86,6 +87,8 @@ final class BlockCommentsFixer extends AbstractFixer
      * Strips the comment marker from each line (// is two characters, #
      * one) and a single leading space; an empty line becomes a bare * so
      * the block comment keeps the line structure of the run.
+     *
+     * @throws ValueError
      */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {
@@ -195,6 +198,8 @@ final class BlockCommentsFixer extends AbstractFixer
      * The indentation of the line the comment starts on, read from the
      * whitespace token in front of it. The token can span several lines,
      * so only the part after its last newline is the indent.
+     *
+     * @throws ValueError
      */
     private function getLineIndent(Tokens $tokens, int $index): string
     {

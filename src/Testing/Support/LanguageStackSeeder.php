@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace PSBits\Qa\Testing\Support;
 
 use Closure;
+use PHPUnit\Event\NoPreviousThrowableException;
+use PHPUnit\Framework\InvalidArgumentException;
+use PHPUnit\Framework\MockObject\Exception;
+use PHPUnit\Framework\MockObject\IncompatibleReturnValueException;
 use PSBits\Qa\Testing\Fixtures\FakeLanguageServiceFactory;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
@@ -16,8 +20,6 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
 use function method_exists;
 
 /**
- * Trait LanguageStackSeeder
- *
  * Pre-seeds the language service factory singleton with a language service that serves caller-supplied
  * labels, which the core language stack cannot load in unit tests. Omit the labels to seed a language
  * service with the default mock responses. The consuming test case must set
@@ -27,6 +29,10 @@ trait LanguageStackSeeder
 {
     /**
      * @param Closure(string): string|null $labels
+     * @throws Exception
+     * @throws IncompatibleReturnValueException
+     * @throws InvalidArgumentException
+     * @throws NoPreviousThrowableException
      */
     protected function seedLanguageStack(?Closure $labels = null): void
     {

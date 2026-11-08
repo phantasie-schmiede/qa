@@ -3,11 +3,85 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\EmptyCommentsFixer;
 
 final class EmptyCommentsFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testDropsALeadingBlankStarLine(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testDropsATrailingBlankStarLine(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -28,6 +102,9 @@ final class EmptyCommentsFixerTest extends TestCase
         self::assertSame($once, $this->fix($fixer, $once));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsBlockCommentWithContent(): void
     {
         $code = <<<'php'
@@ -42,6 +119,9 @@ final class EmptyCommentsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsDocblockWithContent(): void
     {
         $code = <<<'php'
@@ -61,6 +141,9 @@ final class EmptyCommentsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsDocblockWithOnlyTags(): void
     {
         $code = <<<'php'
@@ -70,7 +153,6 @@ final class EmptyCommentsFixerTest extends TestCase
             {
                 /**
                  * @param string $name
-                 *
                  * @throws \InvalidArgumentException
                  */
                 public function run(string $name): void
@@ -82,6 +164,9 @@ final class EmptyCommentsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsNonEmptySingleLineComments(): void
     {
         $code = <<<'php'
@@ -94,6 +179,45 @@ final class EmptyCommentsFixerTest extends TestCase
         self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testRemovesADocblockThatOnlyCarriesBlankStarLines(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                /**
+                 *
+                 *
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesEmptyBlockComment(): void
     {
         $code = <<<'php'
@@ -111,6 +235,9 @@ final class EmptyCommentsFixerTest extends TestCase
             php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesEmptyCommentBeforeCodeOnTheSameLine(): void
     {
         $code = <<<'php'
@@ -126,6 +253,9 @@ final class EmptyCommentsFixerTest extends TestCase
             php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesEmptyDocblock(): void
     {
         $code = <<<'php'
@@ -157,6 +287,9 @@ final class EmptyCommentsFixerTest extends TestCase
             php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesEmptySingleLineComment(): void
     {
         $code = <<<'php'
@@ -173,6 +306,9 @@ final class EmptyCommentsFixerTest extends TestCase
             php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesInlineEmptyComment(): void
     {
         $code = <<<'php'
@@ -188,6 +324,9 @@ final class EmptyCommentsFixerTest extends TestCase
             php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesInlineEmptyDocblockAfterCode(): void
     {
         $code = <<<'php'
@@ -203,6 +342,9 @@ final class EmptyCommentsFixerTest extends TestCase
             php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesSingleLineEmptyDocblock(): void
     {
         $code = <<<'php'

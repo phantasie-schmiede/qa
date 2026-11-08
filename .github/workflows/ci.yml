@@ -73,3 +73,40 @@ jobs:
           for f in .github/workflows/*.yml; do
             python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"
           done
+
+  lint:
+    # The package is linted with the very tooling it ships to the
+    # extension repositories: PHPStan with the shared baseline
+    # (phpstan.neon.dist includes Resources/Quality/phpstan.neon),
+    # php-cs-fixer with the shared CGL configuration (.php-cs-fixer.php
+    # calls CsFixerFactory) and composer normalize.
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor
+          key: vendor-${{ runner.os }}-p8.4-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            vendor-${{ runner.os }}-p8.4-
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Lint
+        run: |
+          composer analyze:php
+          composer lint:composer
+          composer lint:php

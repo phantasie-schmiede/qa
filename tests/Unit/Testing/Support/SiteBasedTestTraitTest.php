@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Testing\Support\SiteBasedTestTrait;
-use ReflectionMethod;
 
 final class SiteBasedTestTraitTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testBuildSiteConfigurationReturnsTheSiteMap(): void
     {
         self::assertSame(
@@ -16,11 +19,17 @@ final class SiteBasedTestTraitTest extends TestCase
         );
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testDumpYamlRendersAnEmptyMap(): void
     {
         self::assertSame("{}\n", $this->createCarrier()->dump([]));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testDumpYamlRendersNestedMapsAndLists(): void
     {
         $yaml = $this->createCarrier()->dump([
@@ -45,6 +54,9 @@ final class SiteBasedTestTraitTest extends TestCase
         );
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testDumpYamlRendersScalars(): void
     {
         $yaml = $this->createCarrier()->dump([
@@ -74,11 +86,18 @@ final class SiteBasedTestTraitTest extends TestCase
         return new class () {
             use SiteBasedTestTrait;
 
+            /**
+             * @return array{base: string, rootPageId: int}
+             */
             public function build(int $rootPageId, string $base = ''): array
             {
                 return $this->buildSiteConfiguration($rootPageId, $base);
             }
 
+            /**
+             * @param array<array-key, mixed> $data
+             * @throws ReflectionException
+             */
             public function dump(array $data): string
             {
                 $method = new ReflectionMethod($this, 'dumpYaml');

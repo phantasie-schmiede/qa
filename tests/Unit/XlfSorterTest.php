@@ -2,24 +2,37 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\Exception;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Quality\XlfSorter;
+use Random\RandomException;
 
 final class XlfSorterTest extends TestCase
 {
     private string $root;
 
+    /**
+     * @throws RandomException
+     */
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/psbits-qa-xlf-' . bin2hex(random_bytes(6));
         mkdir($this->root, 0755, true);
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     protected function tearDown(): void
     {
         $this->removeTree($this->root);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     */
     public function testApplySortsTransUnitIdsCaseInsensitively(): void
     {
         $file   = $this->xlfFile('Unsorted.xlf', $this->template(['zeta', 'Alpha', 'tab.example.label', 'mid']));
@@ -33,6 +46,10 @@ final class XlfSorterTest extends TestCase
         self::assertSame(['problems' => [], 'unsorted' => []], $sorter->check([$file]));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     */
     public function testCheckAndApplyLeaveSortedFilesUntouched(): void
     {
         $file   = $this->xlfFile('Sorted.xlf', $this->template(['Alpha', 'mid', 'tab.example.label', 'zeta']));
@@ -42,6 +59,11 @@ final class XlfSorterTest extends TestCase
         self::assertSame(['changed' => [], 'skipped' => []], $sorter->apply([$file]));
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     */
     public function testCheckReportsMalformedBodyWithoutTouchingIt(): void
     {
         $content   = $this->template(['zeta', 'Alpha']);
@@ -62,6 +84,9 @@ final class XlfSorterTest extends TestCase
         self::assertSame($malformed . "\n", file_get_contents($file));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckReportsUnreadableFile(): void
     {
         $missing = $this->root . '/missing.xlf';
@@ -69,6 +94,9 @@ final class XlfSorterTest extends TestCase
         self::assertSame(['problems' => [$missing . ': unreadable'], 'unsorted' => []], (new XlfSorter())->check([$missing]));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckReportsUnsortedFile(): void
     {
         $file = $this->xlfFile('Unsorted.xlf', $this->template(['zeta', 'Alpha', 'tab.example.label', 'mid']));
@@ -76,6 +104,10 @@ final class XlfSorterTest extends TestCase
         self::assertSame(['problems' => [], 'unsorted' => [$file]], (new XlfSorter())->check([$file]));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     */
     public function testFindFilesExcludesBuildAndDependencyDirectories(): void
     {
         $kept = [
@@ -105,6 +137,9 @@ final class XlfSorterTest extends TestCase
         self::assertSame(['Resources/Private/Language/locallang.xlf', 'Resources/Sub/Other.xlf'], $relative);
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     private function removeTree(string $path): void
     {
         if (!is_dir($path)) {
@@ -154,6 +189,9 @@ final class XlfSorterTest extends TestCase
             xlf;
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     private function xlfFile(string $name, string $content): string
     {
         $file = $this->root . '/' . $name;

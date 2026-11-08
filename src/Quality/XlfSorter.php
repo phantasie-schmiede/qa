@@ -44,6 +44,7 @@ final class XlfSorter
      * build, dependency and version control directories.
      *
      * @return list<string>
+     * @throws RuntimeException
      */
     public static function findFiles(string $root): array
     {
@@ -104,8 +105,8 @@ final class XlfSorter
 
     /**
      * @param list<string> $files
-     *
      * @return array{changed: list<string>, skipped: list<string>}
+     * @throws RuntimeException
      */
     public function apply(array $files): array
     {
@@ -145,7 +146,6 @@ final class XlfSorter
 
     /**
      * @param list<string> $files
-     *
      * @return array{unsorted: list<string>, problems: list<string>}
      *             unsorted: files with at least one unsorted body
      *             problems: unreadable files and bodies the sorter refuses to touch

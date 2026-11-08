@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\AlphabeticalArrayKeysFixer;
 
 final class AlphabeticalArrayKeysFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -24,6 +28,9 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
         self::assertSame($once, $this->fix($fixer, $once));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresIntegerKeys(): void
     {
         $code = <<<'php'
@@ -38,6 +45,9 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
         self::assertSame($code, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresValuesWithSideEffects(): void
     {
         $code = <<<'php'
@@ -52,6 +62,9 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
         self::assertSame($code, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSortsMultilineArrays(): void
     {
         $code = <<<'php'
@@ -73,6 +86,9 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
             php, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSortsNestedArrays(): void
     {
         $code = <<<'php'
@@ -94,6 +110,9 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
             php, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSortsSingleLineArrays(): void
     {
         $code = <<<'php'
