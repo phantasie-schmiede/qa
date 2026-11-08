@@ -92,6 +92,8 @@ final class TypedConstantFixer extends AbstractFixer
      * Types at most one constant per round: the class elements are
      * re-located after every insertion, because insertAt() shifts all
      * token indices behind it.
+     *
+     * @throws LogicException
      */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {
@@ -274,7 +276,7 @@ final class TypedConstantFixer extends AbstractFixer
      * The type of a statement that declares several constants at once is
      * only usable when every value infers to the same type.
      *
-     * @param array{start: int, end: int, constants: list<int>} $statement
+     * @param array{values: list<array{start: int, end: int}>} $statement
      */
     private function inferStatementType(Tokens $tokens, array $statement): ?string
     {

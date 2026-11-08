@@ -3,13 +3,20 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Config;
+use PHPUnit\Framework\Exception;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Quality\CsFixerFactory;
+use Random\RandomException;
+use Symfony\Component\Finder\Exception\DirectoryNotFoundException;
 
 final class CsFixerConfigTest extends TestCase
 {
     private string $root;
 
+    /**
+     * @throws RandomException
+     */
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/psbits-qa-csfixer-' . bin2hex(random_bytes(6));
@@ -20,12 +27,19 @@ final class CsFixerConfigTest extends TestCase
         }
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     protected function tearDown(): void
     {
         chdir(sys_get_temp_dir());
         $this->removeTree($this->root);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws DirectoryNotFoundException
+     */
     public function testConfigHonoursExcludeDirectories(): void
     {
         mkdir($this->root . '/Tests/Fixtures', 0755, true);
@@ -49,6 +63,9 @@ final class CsFixerConfigTest extends TestCase
         );
     }
 
+    /**
+     * @throws Exception
+     */
     public function testConfigSkipsMissingDirectories(): void
     {
         unlink($this->root . '/Configuration/Configuration.php');
@@ -65,6 +82,10 @@ final class CsFixerConfigTest extends TestCase
         self::assertCount(2, $files);
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testConfigUsesTheRepositoryDirectoriesAndTheSharedFixers(): void
     {
         chdir($this->root);
@@ -113,6 +134,9 @@ final class CsFixerConfigTest extends TestCase
         );
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     private function removeTree(string $path): void
     {
         if (!is_dir($path)) {

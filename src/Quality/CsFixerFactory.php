@@ -14,6 +14,7 @@ use PSBits\Qa\PhpCsFixer\Fixer\EmptyCommentsFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\FunctionImportsFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\PropertyNamesAlignmentFixer;
 use PSBits\Qa\PhpCsFixer\Fixer\TypedConstantFixer;
+use Symfony\Component\Finder\Exception\DirectoryNotFoundException;
 
 use function array_filter;
 use function array_map;
@@ -38,6 +39,7 @@ final class CsFixerFactory
      * @param list<string> $excludes    repository-relative directories to skip
      *                                  (e.g. test fixtures that hold expected
      *                                  output data instead of code to lint)
+     * @throws DirectoryNotFoundException
      */
     public static function create(array $directories, array $excludes = []): Config
     {

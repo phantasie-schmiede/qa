@@ -22,6 +22,7 @@ use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\Tokenizer\TokensAnalyzer;
 use SplFileInfo;
+use ValueError;
 
 use function array_key_first;
 use function count;
@@ -111,6 +112,9 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         return $tokens->isAnyTokenKindsFound([T_VARIABLE]);
     }
 
+    /**
+     * @throws ValueError
+     */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {
         $elementsByClass = [];
@@ -132,6 +136,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
      * single space, so shorter declarations are padded and longer ones trimmed.
      *
      * @param list<array{0: int, 1: int, 2: int}> $block [variableIndex, firstDeclIndex, separatorEndIndex]
+     * @throws ValueError
      */
     private function alignBlock(Tokens $tokens, array $block): void
     {
@@ -170,6 +175,9 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
         }
     }
 
+    /**
+     * @throws ValueError
+     */
     private function alignConstructorParameters(Tokens $tokens, int $functionIndex): void
     {
         $openParenthesisIndex  = $tokens->getNextTokenOfKind($functionIndex, ['(']);
@@ -244,6 +252,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
 
     /**
      * @param list<array{classIndex: int, index: int, token: Token, type: string}> $elements
+     * @throws ValueError
      */
     private function fixConstructorParameters(Tokens $tokens, array $elements): void
     {
@@ -256,6 +265,7 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
 
     /**
      * @param list<array{classIndex: int, index: int, token: Token, type: string}> $elements
+     * @throws ValueError
      */
     private function fixProperties(Tokens $tokens, array $elements): void
     {
@@ -331,6 +341,8 @@ final class PropertyNamesAlignmentFixer extends AbstractFixer
 
     /**
      * Return the zero based column at which a variable starts within its line.
+     *
+     * @throws ValueError
      */
     private function getVariableColumn(Tokens $tokens, int $variableIndex, int $firstDeclIndex): int
     {

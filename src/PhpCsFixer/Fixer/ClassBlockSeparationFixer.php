@@ -26,6 +26,7 @@ use PhpCsFixer\FixerDefinition\CodeSample;
 use PhpCsFixer\FixerDefinition\FixerDefinition;
 use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
 use PhpCsFixer\Preg;
+use PhpCsFixer\PregException;
 use PhpCsFixer\Tokenizer\CT;
 use PhpCsFixer\Tokenizer\FCT;
 use PhpCsFixer\Tokenizer\Token;
@@ -124,6 +125,9 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         return $tokens->isAnyTokenKindsFound(Token::getClassyTokenKinds());
     }
 
+    /**
+     * @throws PregException
+     */
     protected function applyFix(\SplFileInfo $file, Tokens $tokens): void
     {
         foreach ($this->getElementsByClass($tokens) as $class) {
@@ -196,6 +200,9 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         ]);
     }
 
+    /**
+     * @throws PregException
+     */
     private function correctLineBreaks(Tokens $tokens, int $startIndex, int $endIndex, int $reqLineCount): void
     {
         $lineEnding = $this->whitespacesConfig->getLineEnding();
@@ -320,6 +327,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
      * element within the class, interface or trait.
      *
      * @param _Class $class
+     * @throws PregException
      */
     private function fixSpaceAboveClassElement(Tokens $tokens, array $class, int $elementIndex): void
     {
@@ -403,6 +411,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
 
     /**
      * @param _Class $class
+     * @throws PregException
      */
     private function fixSpaceBelowClassElement(Tokens $tokens, array $class): void
     {

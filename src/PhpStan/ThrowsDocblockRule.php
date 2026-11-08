@@ -11,10 +11,10 @@ use PHPStan\Node\MethodReturnStatementsNode;
 use PHPStan\Node\ReturnStatementsNode;
 use PHPStan\PhpDoc\ResolvedPhpDocBlock;
 use PHPStan\PhpDoc\TypeNodeResolver;
+use PHPStan\Rules\IdentifierRuleError;
 use PHPStan\Rules\MultipleNodeTypesRule;
 use PHPStan\Rules\RuleErrorBuilder;
 use PHPStan\Type\FileTypeMapper;
-use PHPStan\Type\ObjectType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeUtils;
 
@@ -44,6 +44,8 @@ use function usort;
  *   Method Class\Name::method() @throws do not match the thrown exceptions: expected \A\B, \C\D, declared none.
  *   Function some\ns\function() @throws do not match the thrown exceptions: expected none, declared \A\B.
  * ("none" = no @throws types at all)
+ *
+ * @implements MultipleNodeTypesRule<Node>
  */
 final class ThrowsDocblockRule implements MultipleNodeTypesRule
 {
@@ -57,7 +59,6 @@ final class ThrowsDocblockRule implements MultipleNodeTypesRule
 
     /**
      * @param list<string> $names class names without leading backslash
-     * @return list<string>
      */
     private static function describe(array $names): string
     {
@@ -88,10 +89,10 @@ final class ThrowsDocblockRule implements MultipleNodeTypesRule
         $names = [];
 
         foreach (TypeUtils::flattenTypes($type) as $flattened) {
-            if (!$flattened instanceof ObjectType) {
-                continue;
-            }
-
+            /*
+             * getObjectClassNames() yields nothing for non-object types, so
+             * no instanceof check is needed.
+             */
             foreach ($flattened->getObjectClassNames() as $name) {
                 $names[] = $name;
             }
@@ -115,66 +116,13 @@ final class ThrowsDocblockRule implements MultipleNodeTypesRule
 
     public function processNode(Node $node, Scope $scope): array
     {
-        if ($node instanceof MethodReturnStatementsNode) {
-            if ($node->methodReflection->isAbstract()->yes()) {
-                /*
-                 * Abstract and interface methods have no body, so the thrown
-                 * set cannot be determined; their @throws is a contract.
-                 */
-                return [];
-            }
+        /*
+         * The registry only dispatches the node types listed in
+         * getNodeTypes(), so the union is the actual input type here.
+         */
+        /** @var MethodReturnStatementsNode|FunctionReturnStatementsNode $node */
 
-            $method   = $node->methodReflection;
-            $subject  = 'Method ' . $method->getDeclaringClass()->getName() . '::' . $method->getName() . '()';
-            $resolved = $this->fileTypeMapper->getResolvedPhpDoc(
-                $scope->getFile(),
-                $method->getDeclaringClass()->getName(),
-                $scope->isInTrait() ? $scope->getTraitReflection()->getName() : null,
-                $method->getName(),
-                null === $node->getDocComment() ? '' : $node->getDocComment()->getText(),
-            );
-        } else {
-            $function = $node->functionReflection;
-            $subject  = 'Function ' . $node->function->namespacedName . '()';
-            $resolved = $this->fileTypeMapper->getResolvedPhpDoc(
-                $scope->getFile(),
-                null,
-                null,
-                $function->getName(),
-                null === $node->getDocComment() ? '' : $node->getDocComment()->getText(),
-            );
-        }
-
-        $declared = $this->declaredClassNames($resolved);
-        $thrown   = [];
-
-        foreach ($node->statementResult->getThrowPoints() as $point) {
-            /*
-             * Implicit points mean "something may be thrown here" and are not
-             * part of the exact thrown set with exceptions.implicitThrows=false.
-             */
-            if (!$point->isExplicit()) {
-                continue;
-            }
-
-            $thrown = [...$thrown, ...$this->objectClassNames($point->getType())];
-        }
-
-        $thrown   = self::normalize($thrown);
-        $declared = self::normalize($declared);
-
-        if ($thrown === $declared) {
-            return [];
-        }
-
-        $message = sprintf(
-            '%s @throws do not match the thrown exceptions: expected %s, declared %s.',
-            $subject,
-            self::describe($thrown),
-            self::describe($declared),
-        );
-
-        return [RuleErrorBuilder::message($message)->identifier(self::IDENTIFIER)->build()];
+        return $this->processReturnStatements($node, $scope);
     }
 
     /**
@@ -208,5 +156,75 @@ final class ThrowsDocblockRule implements MultipleNodeTypesRule
         }
 
         return $names;
+    }
+
+    /**
+     * @return list<IdentifierRuleError>
+     */
+    private function processReturnStatements(MethodReturnStatementsNode|FunctionReturnStatementsNode $node, Scope $scope): array
+    {
+        if ($node instanceof MethodReturnStatementsNode) {
+            if ($node->getMethodReflection()->isAbstract()->yes()) {
+                /*
+                 * Abstract and interface methods have no body, so the thrown
+                 * set cannot be determined; their @throws is a contract.
+                 */
+                return [];
+            }
+
+            $method   = $node->getMethodReflection();
+            $subject  = 'Method ' . $method->getDeclaringClass()->getName() . '::' . $method->getName() . '()';
+            $resolved = $this->fileTypeMapper->getResolvedPhpDoc(
+                $scope->getFile(),
+                $method->getDeclaringClass()->getName(),
+                $scope->isInTrait() ? $scope->getTraitReflection()->getName() : null,
+                $method->getName(),
+                null === $node->getDocComment() ? '' : $node->getDocComment()->getText(),
+            );
+            $points = $node->getStatementResult()->getThrowPoints();
+        } else {
+            $function  = $node->getFunctionReflection();
+            $namespace = $scope->getNamespace();
+            $subject   = 'Function ' . (null !== $namespace ? $namespace . '\\' : '') . $function->getName() . '()';
+            $resolved  = $this->fileTypeMapper->getResolvedPhpDoc(
+                $scope->getFile(),
+                null,
+                null,
+                $function->getName(),
+                null === $node->getDocComment() ? '' : $node->getDocComment()->getText(),
+            );
+            $points = $node->getStatementResult()->getThrowPoints();
+        }
+
+        $declared = $this->declaredClassNames($resolved);
+        $thrown   = [];
+
+        foreach ($points as $point) {
+            /*
+             * Implicit points mean "something may be thrown here" and are not
+             * part of the exact thrown set with exceptions.implicitThrows=false.
+             */
+            if (!$point->isExplicit()) {
+                continue;
+            }
+
+            $thrown = [...$thrown, ...$this->objectClassNames($point->getType())];
+        }
+
+        $thrown   = self::normalize($thrown);
+        $declared = self::normalize($declared);
+
+        if ($thrown === $declared) {
+            return [];
+        }
+
+        $message = sprintf(
+            '%s @throws do not match the thrown exceptions: expected %s, declared %s.',
+            $subject,
+            self::describe($thrown),
+            self::describe($declared),
+        );
+
+        return [RuleErrorBuilder::message($message)->identifier(self::IDENTIFIER)->build()];
     }
 }

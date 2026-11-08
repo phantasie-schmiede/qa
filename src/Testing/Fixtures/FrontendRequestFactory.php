@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Testing\Fixtures;
 
+use InvalidArgumentException;
 use TYPO3\CMS\Core\Core\SystemEnvironmentBuilder;
 use TYPO3\CMS\Core\Http\ServerRequest;
 use TYPO3\CMS\Core\Http\Uri;
@@ -23,6 +24,7 @@ final class FrontendRequestFactory
     /**
      * @param array<string, mixed> $viewSetup
      * @param array<string, mixed> $requestAttributes
+     * @throws InvalidArgumentException
      */
     public static function createExtbaseRequest(
         string $controllerClass,
@@ -45,6 +47,7 @@ final class FrontendRequestFactory
     /**
      * @param array<string, mixed> $viewSetup
      * @param array<string, mixed> $requestAttributes
+     * @throws InvalidArgumentException
      */
     public static function createFrontendRequest(
         string $pluginKey,

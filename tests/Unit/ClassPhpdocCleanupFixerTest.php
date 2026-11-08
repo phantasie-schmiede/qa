@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\ClassPhpdocCleanupFixer;
 
 final class ClassPhpdocCleanupFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -48,6 +52,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
         self::assertSame($once, $this->fix($fixer, $once));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresDocblocksAboveOtherStatements(): void
     {
         $code = <<<'php'
@@ -70,6 +77,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
         self::assertSame($code, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresDocblocksOfNonClassDeclarations(): void
     {
         $code = <<<'php'
@@ -100,6 +110,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
         self::assertSame($code, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsAMismatchedNameLine(): void
     {
         $code = <<<'php'
@@ -143,6 +156,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsValuableContent(): void
     {
         $code = <<<'php'
@@ -162,6 +178,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
         self::assertSame($code, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesBoilerplateDocblocksCompletely(): void
     {
         $code = <<<'php'
@@ -221,6 +240,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesKindPrefixedNameLines(): void
     {
         $code = <<<'php'
@@ -271,6 +293,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesOnlyThePackageTag(): void
     {
         $code = <<<'php'
@@ -298,6 +323,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesSingleLineDocblocks(): void
     {
         $code = <<<'php'
@@ -327,6 +355,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesTheNameLineAndKeepsTheDescription(): void
     {
         $code = <<<'php'
@@ -356,6 +387,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testRemovesTheNameLineAndPackageTagAndKeepsTheOtherTags(): void
     {
         $code = <<<'php'
@@ -384,6 +418,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testWorksOnInterfacesTraitsAndEnums(): void
     {
         $code = <<<'php'
@@ -434,6 +471,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testWorksWithAttributes(): void
     {
         $code = <<<'php'
@@ -490,6 +530,9 @@ final class ClassPhpdocCleanupFixerTest extends TestCase
             php, $this->fix(new ClassPhpdocCleanupFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testWorksWithModifiers(): void
     {
         $code = <<<'php'

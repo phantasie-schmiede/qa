@@ -34,8 +34,11 @@
         "sort-packages": true
     },
     "scripts": {
+        "analyze:php": "phpstan analyse --no-progress",
         "fix:composer": "composer normalize",
+        "fix:php": "php-cs-fixer fix",
         "lint:composer": "composer normalize --dry-run --diff --no-check-lock --no-update-lock",
+        "lint:php": "php-cs-fixer fix --dry-run --diff",
         "test": "phpunit -c tests/phpunit.xml.dist"
     }
 }

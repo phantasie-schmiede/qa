@@ -236,7 +236,7 @@ final class Application
     }
 
     /**
-     * @throws UnexpectedValueException
+     * @throws RuntimeException
      */
     private static function check(string $root): int
     {
@@ -281,6 +281,21 @@ final class Application
         $failed |= self::verifyScripts($root);
 
         return $failed;
+    }
+
+    /**
+     * Creates the directory with all missing parent directories when it
+     * does not exist yet. The existence is re-checked after a failed
+     * mkdir, so a concurrent creation by another process is tolerated
+     * instead of reported.
+     *
+     * @throws RuntimeException
+     */
+    private static function ensureDirectory(string $directory): void
+    {
+        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new RuntimeException('could not create ' . $directory);
+        }
     }
 
     private static function filesIdentical(string $a, string $b): bool
@@ -473,6 +488,7 @@ final class Application
 
     /**
      * @param array{name: string, command: string, condition: string} $script
+     * @throws RuntimeException
      * @throws UnexpectedValueException
      */
     private static function scriptApplicable(array $script, string $root): bool
@@ -533,9 +549,7 @@ final class Application
     {
         $hooks = $root . '/.git/hooks';
 
-        if (!is_dir($hooks) && !mkdir($hooks, 0755, true)) {
-            throw new RuntimeException('could not create ' . $hooks);
-        }
+        self::ensureDirectory($hooks);
 
         $hook   = $hooks . '/pre-commit';
         $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
@@ -565,9 +579,7 @@ final class Application
 
                 $linkDir = dirname($link);
 
-                if (!is_dir($linkDir) && !mkdir($linkDir, 0755, true)) {
-                    throw new RuntimeException('could not create ' . $linkDir);
-                }
+                self::ensureDirectory($linkDir);
 
                 if (!symlink($target, $link)) {
                     throw new RuntimeException('could not create skill link at ' . $link);
@@ -595,9 +607,7 @@ final class Application
         } else {
             $workflowDir = dirname($workflow);
 
-            if (!is_dir($workflowDir) && !mkdir($workflowDir, 0755, true)) {
-                throw new RuntimeException('could not create ' . $workflowDir);
-            }
+            self::ensureDirectory($workflowDir);
 
             if (false === copy($source, $workflow)) {
                 throw new RuntimeException('could not sync caller workflow to ' . $workflow);
@@ -620,7 +630,6 @@ final class Application
      * the expected standard so it can be aligned manually.
      *
      * @throws RuntimeException
-     * @throws UnexpectedValueException
      */
     private static function syncScripts(string $root): void
     {
@@ -688,7 +697,7 @@ final class Application
      * (CI gate): the applicable shared scripts exist and every aggregate
      * matches the standard.
      *
-     * @throws UnexpectedValueException
+     * @throws RuntimeException
      */
     private static function verifyScripts(string $root): int
     {
@@ -733,6 +742,9 @@ final class Application
         return $failed;
     }
 
+    /**
+     * @throws RuntimeException
+     */
     private static function xlf(string $root, bool $apply): int
     {
         $sorter = new XlfSorter();

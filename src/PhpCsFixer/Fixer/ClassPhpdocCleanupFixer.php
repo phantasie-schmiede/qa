@@ -20,6 +20,7 @@ use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use PhpCsFixer\Tokenizer\TokensAnalyzer;
 use SplFileInfo;
+use ValueError;
 
 use function array_diff_key;
 use function array_flip;
@@ -86,6 +87,8 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
      * When nothing is cut out, the original content is returned
      * unchanged; when nothing valuable is left, null - the docblock
      * itself has to go.
+     *
+     * @throws ValueError
      */
     private static function cleanDocblock(string $content, string $className): ?string
     {
@@ -135,6 +138,10 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
      * "Class", "Enum", "Interface" or "Trait"; case-insensitive) - the
      * paragraph and the blank lines that separate it from the remaining
      * text.
+     *
+     * @param list<string> $summary
+     * @return list<string>
+     * @throws ValueError
      */
     private static function dropNameParagraph(array $summary, string $className): array
     {
@@ -188,6 +195,9 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
     /**
      * Drops every @package tag (and its continuation lines) from the tag
      * lines; the other tags stay.
+     *
+     * @param list<string> $tags
+     * @return list<string>
      */
     private static function dropPackageTags(array $tags): array
     {
@@ -242,6 +252,8 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
     /**
      * The lines of the docblock without the delimiters and the star
      * markers; a single-line docblock yields its single inner line.
+     *
+     * @return list<string>
      */
     private static function logicalLines(string $content): array
     {
@@ -269,6 +281,8 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
      * line and the line break before the following line; the whitespace
      * tokens around it are contiguous, so the line ownership is decided
      * by the single tokens right before and after the docblock.
+     *
+     * @throws ValueError
      */
     private static function removeDocblock(Tokens $tokens, int $index): void
     {
@@ -323,6 +337,7 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
      * The summary is the part before the first @ tag line; a tag
      * continues on the following lines until the next @ tag line.
      *
+     * @param list<string> $logical
      * @return array{0: list<string>, 1: list<string>}
      */
     private static function splitSummaryAndTags(array $logical): array
@@ -358,6 +373,9 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
     /**
      * Drops the leading and trailing blank lines of the lines; the
      * blank lines between text lines (the paragraph separation) stay.
+     *
+     * @param list<string> $lines
+     * @return list<string>
      */
     private static function trimBlankLines(array $lines): array
     {
@@ -428,6 +446,8 @@ final class ClassPhpdocCleanupFixer extends AbstractFixer
      * Per class-like declaration: locates the docblock standing directly
      * before it, cleans the content, and either rewrites the token or
      * removes it together with the rest of its line.
+     *
+     * @throws ValueError
      */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {

@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpStan\ThrowsDocblockRule;
 use PSBits\Qa\Quality\ThrowsFixer;
 
 final class ThrowsFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCollectEntriesKeepsOnlyRuleMessages(): void
     {
         $data = [
@@ -53,6 +57,9 @@ final class ThrowsFixerTest extends TestCase
         ], ThrowsFixer::collectEntries($data));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCollectEntriesReturnsEmptyListForForeignOutput(): void
     {
         self::assertSame([], ThrowsFixer::collectEntries([
@@ -72,6 +79,9 @@ final class ThrowsFixerTest extends TestCase
         self::assertSame([], ThrowsFixer::collectEntries([]));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCollectEntriesStripsTraitContextFromFileKey(): void
     {
         $data = [

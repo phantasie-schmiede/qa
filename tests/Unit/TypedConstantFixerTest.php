@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\TypedConstantFixer;
-use SplFileInfo;
 
 final class TypedConstantFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -25,6 +28,9 @@ final class TypedConstantFixerTest extends TestCase
         self::assertSame($once, $this->fix($fixer, $once));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresAlreadyTypedConstants(): void
     {
         $code = <<<'php'
@@ -39,6 +45,9 @@ final class TypedConstantFixerTest extends TestCase
         self::assertSame($code, $this->fix(new TypedConstantFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testIgnoresMixedAndUntypeableConstants(): void
     {
         $code = <<<'php'
@@ -56,6 +65,9 @@ final class TypedConstantFixerTest extends TestCase
         self::assertSame($code, $this->fix(new TypedConstantFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testTypesArrayLiteralConstants(): void
     {
         $code = <<<'php'
@@ -83,6 +95,9 @@ final class TypedConstantFixerTest extends TestCase
             php, $this->fix(new TypedConstantFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testTypesConstantsWithInferredScalarTypes(): void
     {
         $code = <<<'php'
@@ -110,6 +125,9 @@ final class TypedConstantFixerTest extends TestCase
             php, $this->fix(new TypedConstantFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testTypesMultiConstantStatements(): void
     {
         $code = <<<'php'

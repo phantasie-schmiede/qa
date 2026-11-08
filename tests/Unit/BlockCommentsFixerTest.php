@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\BlockCommentsFixer;
 
 final class BlockCommentsFixerTest extends TestCase
 {
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testConsecutiveLineCommentsBecomeSingleBlock(): void
     {
         $code = <<<'php'
@@ -29,6 +33,9 @@ final class BlockCommentsFixerTest extends TestCase
             php, $this->fix(new BlockCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testFixIsIdempotent(): void
     {
         $code = <<<'php'
@@ -45,6 +52,9 @@ final class BlockCommentsFixerTest extends TestCase
         self::assertSame($once, $this->fix($fixer, $once));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testHashCommentsBecomeSingleBlock(): void
     {
         $code = <<<'php'
@@ -78,6 +88,9 @@ final class BlockCommentsFixerTest extends TestCase
             php, $this->fix(new BlockCommentsFixer(), $code));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSingleAndTrailingCommentsStayUntouched(): void
     {
         $code = <<<'php'

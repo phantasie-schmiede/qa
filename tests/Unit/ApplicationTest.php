@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\Exception;
+use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Console\Application;
 use Random\RandomException;
@@ -46,12 +48,18 @@ final class ApplicationTest extends TestCase
         file_put_contents($this->root . '/composer.json', "{}\n");
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     protected function tearDown(): void
     {
         chdir(sys_get_temp_dir());
         $this->removeTree($this->root);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnAggregateDeviation(): void
     {
         $scripts               = self::BASE_SCRIPTS;
@@ -69,6 +77,9 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('"lint:all": [', $output);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnMissingSharedScript(): void
     {
         $this->writeRepositoryFixtures();
@@ -85,6 +96,9 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('FAIL: script lint:xlf missing (run qa sync and commit)', $output);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnMissingSingleSkillLink(): void
     {
         chdir($this->root);
@@ -93,6 +107,10 @@ final class ApplicationTest extends TestCase
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     * @throws UnexpectedValueException
+     */
     public function testCheckFailsOnMissingSkillTarget(): void
     {
         chdir($this->root);
@@ -101,6 +119,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnMissingToolingScript(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
@@ -119,6 +140,9 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('FAIL: script lint:typoscript missing (run qa sync and commit)', $output);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnTamperedCallerWorkflow(): void
     {
         chdir($this->root);
@@ -131,6 +155,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnTamperedHook(): void
     {
         chdir($this->root);
@@ -139,6 +166,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(1, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckPassesAfterLink(): void
     {
         chdir($this->root);
@@ -146,6 +176,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckPassesAfterLinkAndAlignedAggregates(): void
     {
         $this->writeRepositoryFixtures();
@@ -161,6 +194,10 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testLinkAddsCompleteToolchainToCompleteRepository(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
@@ -202,6 +239,10 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testLinkAddsOnlyAlwaysScriptsToBareRepository(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
@@ -229,6 +270,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkAddsSharedScriptsWithoutTouchingExistingAggregates(): void
     {
         $this->writeRepositoryFixtures();
@@ -246,6 +290,10 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('missing: @lint:composer, @lint:xlf', $output);
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testLinkAppliesNpmScriptConditionsPerPackageJson(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
@@ -268,6 +316,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(['@fix:composer', '@fix:json'], $scripts['fix:all']);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkCreatesMissingAggregatesWithTheStandard(): void
     {
         $scripts = self::BASE_SCRIPTS;
@@ -282,6 +333,9 @@ final class ApplicationTest extends TestCase
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkInstallsHookAndSkillLinks(): void
     {
         chdir($this->root);
@@ -300,6 +354,9 @@ final class ApplicationTest extends TestCase
         }
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkInstallsMissingCallerWorkflow(): void
     {
         chdir($this->root);
@@ -308,18 +365,26 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkIsIdempotent(): void
     {
         $this->writeRepositoryFixtures();
         chdir($this->root);
 
         self::assertSame(0, Application::execute(['qa', 'sync']));
-        $first = (string) file_get_contents($this->root . '/composer.json');
-        self::assertSame(0, Application::execute(['qa', 'sync']));
+        $first      = (string) file_get_contents($this->root . '/composer.json');
+        $secondSync = Application::execute(['qa', 'sync']);
+
+        self::assertSame(0, $secondSync);
 
         self::assertSame($first, (string) file_get_contents($this->root . '/composer.json'));
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkKeepsCustomScriptEntriesAndReportsTheirDeviation(): void
     {
         $scripts             = self::BASE_SCRIPTS;
@@ -355,6 +420,10 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('@lint:yaml', $output);
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testLinkSkipsSharedScriptsOfUnapplicableRepositories(): void
     {
         $this->writeRepositoryFixtures(self::BASE_SCRIPTS, withXlf: false);
@@ -368,6 +437,10 @@ final class ApplicationTest extends TestCase
         self::assertArrayHasKey('fix:throws', $scripts);
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testLinkSkipsTyposcriptScriptForEmptyTyposcriptDirectory(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
@@ -381,6 +454,9 @@ final class ApplicationTest extends TestCase
         self::assertArrayHasKey('lint:yaml', $scripts);
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testLinkSyncsCallerWorkflowWhenPresent(): void
     {
         chdir($this->root);
@@ -404,7 +480,7 @@ final class ApplicationTest extends TestCase
     }
 
     /**
-     * @return array<string, array|string>
+     * @return array<string, string|list<string>>
      */
     private function composerScripts(): array
     {
@@ -413,6 +489,9 @@ final class ApplicationTest extends TestCase
         return $data['scripts'];
     }
 
+    /**
+     * @throws ExpectationFailedException
+     */
     private function link(): string
     {
         ob_start();
@@ -421,6 +500,9 @@ final class ApplicationTest extends TestCase
         return (string) ob_get_clean();
     }
 
+    /**
+     * @throws UnexpectedValueException
+     */
     private function removeTree(string $path): void
     {
         if (!is_dir($path)) {
@@ -469,7 +551,7 @@ final class ApplicationTest extends TestCase
     }
 
     /**
-     * @param array<string, array|string> $scripts
+     * @param array<string, string|list<string>> $scripts
      */
     private function writeRepositoryFixtures(array $scripts = self::BASE_SCRIPTS, bool $withXlf = true, bool $withPhpstan = true): void
     {

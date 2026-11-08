@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Quality;
 
+use RuntimeException;
+use ValueError;
+
 use function array_map;
 use function array_merge;
 use function array_unique;
@@ -34,8 +37,8 @@ use function usort;
  *
  * Every rewritten docblock follows the house layout: the description,
  * one blank star line, then all tags sorted by tag name without blank
- * lines in between (the @param lines keep their parameter order, the
- * @throws lines their name-sorted order).
+ * lines in between - the @param lines keep their parameter order and
+ * the @throws lines their name-sorted order.
  *
  * The @throws lines use the short name of the exception and the missing
  * use statement is added to the file (an exception from the own namespace
@@ -189,6 +192,8 @@ final class ThrowsDocblockApplier
     /**
      * @param list<array{line: int, message: string}> $entries rule messages for one file
      * @return array{fixed: int, skipped: list<string>}
+     * @throws RuntimeException
+     * @throws ValueError
      */
     public function apply(string $filePath, array $entries): array
     {
@@ -293,7 +298,7 @@ final class ThrowsDocblockApplier
         $newContent = implode("\n", $lines) . ($hadTrailingNewline ? "\n" : '');
 
         if (false === file_put_contents($filePath, $newContent)) {
-            throw new \RuntimeException('could not write ' . $filePath);
+            throw new RuntimeException('could not write ' . $filePath);
         }
 
         return ['fixed' => count($edits), 'skipped' => $skipped];
@@ -366,6 +371,7 @@ final class ThrowsDocblockApplier
      * @param array{0: int, 1: string} $candidate [signatureIndex (0-based), indent]
      * @param list<string>             $names     display names (short name or alias)
      * @return null|array{0: int, 1: int, 2: list<string>} [startIdx, endIdx, replacementLines]
+     * @throws ValueError
      */
     private function editForCandidate(array $lines, array $candidate, array $names): ?array
     {
@@ -421,6 +427,7 @@ final class ThrowsDocblockApplier
      *
      * @param list<string> $lines
      * @param list<string> $importLines
+     * @return list<string>
      */
     private function insertImportLines(array $lines, array $importLines): array
     {
@@ -476,6 +483,7 @@ final class ThrowsDocblockApplier
      *   byFqcn: array<string, array{kind: string, short: string}>,
      *   lastUse: ?int,
      * }
+     * @throws ValueError
      */
     private function parseUses(array $lines): array
     {
@@ -511,7 +519,7 @@ final class ThrowsDocblockApplier
 
             $takenShorts[$short] = true;
             $byFqcn[$fqcn]       = [
-                'kind'  => '' === ($match['kind'] ?? '') ? 'class' : trim($match['kind']),
+                'kind'  => '' === $match['kind'] ? 'class' : trim($match['kind']),
                 'short' => $short,
             ];
 
@@ -541,6 +549,7 @@ final class ThrowsDocblockApplier
      * @param list<string> $lines
      * @param list<string> $names exception FQCNs without a leading backslash
      * @return array{display: array<string, string>, lines: list<string>}
+     * @throws ValueError
      */
     private function resolveImports(array $lines, array $names): array
     {
@@ -603,6 +612,7 @@ final class ThrowsDocblockApplier
      * @param list<string> $lines
      * @param list<string> $names
      * @return null|array{0: int, 1: int, 2: list<string>}
+     * @throws ValueError
      */
     private function rewriteExistingDocblock(array $lines, int $docStart, int $docEnd, array $names): ?array
     {
@@ -841,9 +851,12 @@ final class ThrowsDocblockApplier
             if (null !== $heredocTag) {
                 /*
                  * heredoc content is data, not code - only its terminator
-                 * matters (optionally followed by a semicolon)
+                 * matters. The terminator line starts with the tag and may
+                 * continue with any expression the tag is part of (a
+                 * semicolon, a comma, a call argument, ...), so only the
+                 * tag as a whole word on the line counts (PHP grammar).
                  */
-                if (1 === preg_match('/^\s*' . preg_quote($heredocTag, '/') . '[ \t]*;?[ \t]*$/D', $line)) {
+                if (1 === preg_match('/^\s*' . preg_quote($heredocTag, '/') . '(?![A-Za-z0-9_])/', $line)) {
                     $heredocTag = null;
                 }
 

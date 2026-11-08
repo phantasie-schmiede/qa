@@ -2,34 +2,39 @@
 
 declare(strict_types=1);
 
-// Renders the phpunit suite configurations into <repo>/.Build/phpunit/
-// (git-ignored) with absolute paths, because the committed XMLs would
-// resolve their relative bootstrap/cache/testsuite paths against the
-// psbits/qa package instead of the repository when shared from vendor/.
-//
-// Usage:
-//   php renderPhpunitXml.php [unit|functional|all]
-//
-// A suite is rendered when its Tests directory exists in the repository
-// root (PSBITS_QA_REPO_ROOT or the current working directory).
+/*
+ * Renders the phpunit suite configurations into <repo>/.Build/phpunit/
+ * (git-ignored) with absolute paths, because the committed XMLs would
+ * resolve their relative bootstrap/cache/testsuite paths against the
+ * psbits/qa package instead of the repository when shared from vendor/.
+ *
+ * Usage:
+ *   php renderPhpunitXml.php [unit|functional|all]
+ *
+ * A suite is rendered when its Tests directory exists in the repository
+ * root (PSBITS_QA_REPO_ROOT or the current working directory).
+ */
 
 $mode = $argv[1] ?? 'all';
+
 if (!in_array($mode, ['unit', 'functional', 'all'], true)) {
     fwrite(STDERR, "Usage: php renderPhpunitXml.php [unit|functional|all]\n");
+
     exit(1);
 }
 
-$root = getenv('PSBITS_QA_REPO_ROOT') ?: getcwd();
-$testingFramework = $root . '/.Build/vendor/typo3/testing-framework';
-$bootstrapUnit = $testingFramework . '/Resources/Core/Build/UnitTestsBootstrap.php';
+$root                = getenv('PSBITS_QA_REPO_ROOT') ?: getcwd();
+$testingFramework    = $root . '/.Build/vendor/typo3/testing-framework';
+$bootstrapUnit       = $testingFramework . '/Resources/Core/Build/UnitTestsBootstrap.php';
 $bootstrapFunctional = $testingFramework . '/Resources/Core/Build/FunctionalTestsBootstrap.php';
 
 $written = 0;
 
-if ($mode === 'unit' || $mode === 'all') {
+if ('unit' === $mode || 'all' === $mode) {
     if (is_dir($root . '/Tests/Unit')) {
         if (!is_file($bootstrapUnit)) {
             fwrite(STDERR, "error: unit bootstrap missing ({$bootstrapUnit}); run composer install first\n");
+
             exit(1);
         }
         writeXml($root, 'unit', $bootstrapUnit);
@@ -37,10 +42,11 @@ if ($mode === 'unit' || $mode === 'all') {
     }
 }
 
-if ($mode === 'functional' || $mode === 'all') {
+if ('functional' === $mode || 'all' === $mode) {
     if (is_dir($root . '/Tests/Functional')) {
         if (!is_file($bootstrapFunctional)) {
             fwrite(STDERR, "error: functional bootstrap missing ({$bootstrapFunctional}); run composer install first\n");
+
             exit(1);
         }
         writeXml($root, 'functional', $bootstrapFunctional);
@@ -48,37 +54,40 @@ if ($mode === 'functional' || $mode === 'all') {
     }
 }
 
-if ($written === 0) {
+if (0 === $written) {
     fwrite(STDERR, "error: no Tests/Unit or Tests/Functional found in {$root}; nothing rendered\n");
+
     exit(1);
 }
 
 function writeXml(string $root, string $suite, string $bootstrap): void
 {
-    $name = ucfirst($suite);
-    $cache = $root . '/.Build/.phpunit.cache';
+    $name    = ucfirst($suite);
+    $cache   = $root . '/.Build/.phpunit.cache';
     $classes = $root . '/Classes';
-    $tests = $root . '/Tests/' . $name;
+    $tests   = $root . '/Tests/' . $name;
 
-    $header = $suite === 'unit'
-        ? "Unit test suite setup."
-        : "Functional test suite setup.";
-    $note = "The bootstrap file is intentionally not copied into this repository. It is" . "\n"
-        . "    provided by typo3/testing-framework and tracked there, so upgrading the" . "\n"
-        . "    framework keeps the bootstrap in sync automatically.";
-    if ($suite === 'functional') {
+    $header = 'unit' === $suite
+        ? 'Unit test suite setup.'
+        : 'Functional test suite setup.';
+    $note = 'The bootstrap file is intentionally not copied into this repository. It is' . "\n"
+        . '    provided by typo3/testing-framework and tracked there, so upgrading the' . "\n"
+        . '    framework keeps the bootstrap in sync automatically.';
+
+    if ('functional' === $suite) {
         $note .= "\n\n"
-            . "    backupGlobals stays on, but beStrictAboutChangesToGlobalState is off: a" . "\n"
-            . "    functional test boots a complete TYPO3 instance, which legitimately populates" . "\n"
+            . '    backupGlobals stays on, but beStrictAboutChangesToGlobalState is off: a' . "\n"
+            . '    functional test boots a complete TYPO3 instance, which legitimately populates' . "\n"
             . "    \$GLOBALS['TYPO3_CONF_VARS'], the container and \$_SERVER. The testing-framework" . "\n"
-            . "    default configuration does not enable the flag either.";
+            . '    default configuration does not enable the flag either.';
     }
 
     $phpBlock = '    <php>' . "\n"
         . '        <ini' . "\n"
         . '            name="display_errors"' . "\n"
         . '            value="1" />' . "\n";
-    if ($suite === 'unit') {
+
+    if ('unit' === $suite) {
         $phpBlock .= '        <ini' . "\n"
             . '            name="error_reporting"' . "\n"
             . '            value="-1" />' . "\n";
@@ -86,7 +95,8 @@ function writeXml(string $root, string $suite, string $bootstrap): void
     $phpBlock .= '        <env' . "\n"
         . '            name="TYPO3_CONTEXT"' . "\n"
         . '            value="Testing" />' . "\n";
-    if ($suite === 'functional') {
+
+    if ('functional' === $suite) {
         $phpBlock .= "        <!--\n"
             . "            PHPUnit only calls putenv() for <env> when the variable is not\n"
             . "            already set. Setting typo3DatabaseDriver in the shell therefore wins,\n"
@@ -137,8 +147,10 @@ function writeXml(string $root, string $suite, string $bootstrap): void
         . '</phpunit>' . "\n";
 
     $dir = $root . '/.Build/phpunit';
+
     if (!is_dir($dir) && !mkdir($dir, 0755, true)) {
         fwrite(STDERR, "error: could not create {$dir}\n");
+
         exit(1);
     }
     file_put_contents($dir . '/' . $name . 'Tests.xml', $xml);

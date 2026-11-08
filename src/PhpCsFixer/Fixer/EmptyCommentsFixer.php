@@ -18,6 +18,7 @@ use PhpCsFixer\FixerDefinition\FixerDefinitionInterface;
 use PhpCsFixer\Tokenizer\Token;
 use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
+use ValueError;
 
 use function array_slice;
 use function count;
@@ -185,6 +186,8 @@ final class EmptyCommentsFixer extends AbstractFixer
      * Backwards, so the tokens cleared or rewritten by a removal (the
      * direct neighbours of the comment) are never visited for removal
      * themselves.
+     *
+     * @throws ValueError
      */
     protected function applyFix(SplFileInfo $file, Tokens $tokens): void
     {
@@ -221,6 +224,8 @@ final class EmptyCommentsFixer extends AbstractFixer
      * by the single tokens right before and after the comment. A
      * whitespace token can span several lines, so dropping a whole line
      * means cutting the token at the newline inside its content.
+     *
+     * @throws ValueError
      */
     private function removeComment(Tokens $tokens, int $index): void
     {
