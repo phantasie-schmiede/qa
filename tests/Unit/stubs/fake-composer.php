@@ -53,6 +53,16 @@ if ('' === $version) {
     exit(1);
 }
 
+/*
+ * A vendor dir wiped by the fixer is recreated by a real composer
+ * run; do the same so the installed.json write always succeeds.
+ */
+$composerDir = $root . '/.Build/vendor/composer';
+
+if (!is_dir($composerDir)) {
+    mkdir($composerDir, 0755, true);
+}
+
 file_put_contents($root . '/.Build/vendor/composer/installed.json', json_encode([
     'packages' => [
         ['name' => 'typo3/cms-core', 'version' => $version],
