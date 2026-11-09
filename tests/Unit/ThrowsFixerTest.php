@@ -174,6 +174,12 @@ final class ThrowsFixerTest extends TestCase
         ], $this->composerCalls($root));
 
         /*
+         * The core major switch wiped the vendor dir (the fake
+         * composer recreates installed.json only).
+         */
+        self::assertFileDoesNotExist($root . '/.Build/vendor/keep-me.txt');
+
+        /*
          * NewError is thrown on both majors (no marker), Other only on
          * 14.3 (marker), Old on none (line removed).
          */
@@ -230,6 +236,12 @@ final class ThrowsFixerTest extends TestCase
             ['update', '--with', 'typo3/cms-core:^14.3', '-W'],
             ['update', '--with', 'typo3/cms-core:14.3.10', '-W'],
         ], $this->composerCalls($root));
+
+        /*
+         * The core major switch wiped the vendor dir (the fake
+         * composer recreates installed.json only).
+         */
+        self::assertFileDoesNotExist($root . '/.Build/vendor/keep-me.txt');
 
         /*
          * The merge only runs after every core converged, so a failed run
@@ -312,6 +324,11 @@ final class ThrowsFixerTest extends TestCase
                 }
             }
             php, file_get_contents($root . '/src/Service.php'));
+
+        /*
+         * No core switch, no vendor wipe.
+         */
+        self::assertFileExists($root . '/.Build/vendor/keep-me.txt');
         self::assertFileDoesNotExist($root . '/.state/composer.log');
     }
 
@@ -379,6 +396,7 @@ final class ThrowsFixerTest extends TestCase
 
         file_put_contents($root . '/composer.json', json_encode(['require' => ['typo3/cms-core' => $coreConstraint]]));
         file_put_contents($root . '/.Build/vendor/composer/installed.json', json_encode(['packages' => [['name' => 'typo3/cms-core', 'version' => $installedVersion]]]));
+        file_put_contents($root . '/.Build/vendor/keep-me.txt', 'wiped on core major switch');
         file_put_contents($root . '/Build/Quality/phpstan.neon.dist', "parameters:\n    level: 0\n");
         file_put_contents($root . '/.state/responses.json', json_encode($responses));
         file_put_contents($root . '/.state/fail-calls', '');

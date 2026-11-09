@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Quality;
 
+use FilesystemIterator;
 use PSBits\Qa\PhpStan\ThrowsDocblockAuditRule;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use RuntimeException;
+use UnexpectedValueException;
 use ValueError;
 
 use function array_diff;
@@ -21,16 +25,20 @@ use function file_put_contents;
 use function implode;
 use function in_array;
 use function is_array;
+use function is_dir;
 use function is_executable;
 use function is_file;
+use function is_link;
 use function is_resource;
 use function is_string;
 use function json_decode;
+use function ltrim;
 use function preg_match;
 use function preg_replace;
 use function proc_close;
 use function proc_open;
 use function reset;
+use function rmdir;
 use function sprintf;
 use function str_starts_with;
 use function strcasecmp;
@@ -49,8 +57,11 @@ use function usort;
  *
  * The matrix is read from the typo3/cms-core constraint in the
  * repository's composer.json. For every matrix entry the fixer switches
- * the installed core (composer update --with ... -W) and runs the
- * PHPStan analysis (with the psbits.throwsDocblockAudit rule) in a loop
+ * the installed core (composer update --with ... -W, preceded by a full
+ * vendor wipe when the core major changes - composer loads the composer
+ * plugins from the pre-update vendor state, and a mismatched
+ * class-alias-loader major crashes the update) and runs the PHPStan
+ * analysis (with the psbits.throwsDocblockAudit rule) in a loop
  * until the docblocks carry the core's thrown set - fixing a callee
  * changes what its callers have to declare, so the fix cascades; the
  * loop aborts with a message after twenty-five rounds per core. A cross
@@ -485,7 +496,12 @@ final class ThrowsFixer
 
         foreach (($data['packages'] ?? []) as $package) {
             if (is_array($package) && 'typo3/cms-core' === ($package['name'] ?? null)) {
-                $version = (string) ($package['version'] ?? '');
+                /*
+                 * Composer records versions with a leading "v" (e.g.
+                 * v14.3.10); strip it so the major compares equal to
+                 * the matrix entries.
+                 */
+                $version = ltrim((string) ($package['version'] ?? ''), 'v');
 
                 return '' !== $version ? $version : null;
             }
@@ -604,11 +620,17 @@ final class ThrowsFixer
      */
     private function restoreCore(string $startingVersion): void
     {
-        if (0 === strcasecmp((string) $this->installedCoreVersion(), $startingVersion)) {
+        $installed = (string) $this->installedCoreVersion();
+
+        if (0 === strcasecmp($installed, $startingVersion)) {
             return;
         }
 
         try {
+            if (explode('.', $installed)[0] !== explode('.', $startingVersion)[0]) {
+                $this->wipeVendor();
+            }
+
             $this->composer(['update', '--with', 'typo3/cms-core:' . $startingVersion, '-W']);
             echo "throws-fix: core restored to {$startingVersion}\n";
         } catch (RuntimeException|ValueError $exception) {
@@ -626,7 +648,8 @@ final class ThrowsFixer
 
     /**
      * Switches the installed core to the matrix entry; a no-op when the
-     * entry already matches the installed version.
+     * entry already matches the installed version. A core major change
+     * wipes the vendor directory first (see wipeVendor()).
      *
      * @throws RuntimeException
      * @throws ValueError
@@ -637,6 +660,10 @@ final class ThrowsFixer
 
         if (null !== $installed && 0 === strcasecmp($majorMinor, self::majorMinorOf($installed))) {
             return;
+        }
+
+        if (null !== $installed && explode('.', $majorMinor)[0] !== explode('.', $installed)[0]) {
+            $this->wipeVendor();
         }
 
         echo 'throws-fix: switching core ' . (null !== $installed ? $installed . ' -> ' : '') . '^' . $majorMinor . "\n";
@@ -689,6 +716,47 @@ final class ThrowsFixer
                 $this->switchToCore($majorMinor);
                 $sets[$majorMinor] = $this->converge($applier, $tempConfig, $majorMinor);
             }
+        }
+    }
+
+    /**
+     * Removes the whole vendor directory (no-op when it does not exist)
+     * so that the composer run starts from a clean vendor state:
+     * composer loads the composer plugins from the pre-update vendor
+     * state, and a class-alias-loader major that mismatches the target
+     * core crashes the update (missing CaseSensitiveToken/SuffixToken
+     * class).
+     *
+     * @throws RuntimeException
+     */
+    private function wipeVendor(): void
+    {
+        $directory = $this->repoRoot . '/.Build/vendor';
+
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST,
+            );
+
+            foreach ($iterator as $item) {
+                $itemPath = $item->getPathname();
+                $removed  = is_dir($itemPath) && !is_link($itemPath) ? rmdir($itemPath) : unlink($itemPath);
+
+                if (false === $removed) {
+                    throw new RuntimeException('could not remove ' . $itemPath);
+                }
+            }
+        } catch (UnexpectedValueException $exception) {
+            throw new RuntimeException('could not remove ' . $directory, 0, $exception);
+        }
+
+        if (false === rmdir($directory)) {
+            throw new RuntimeException('could not remove ' . $directory);
         }
     }
 }
