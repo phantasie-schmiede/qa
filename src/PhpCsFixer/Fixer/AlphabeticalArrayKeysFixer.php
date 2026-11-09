@@ -24,10 +24,13 @@ use PhpCsFixer\Tokenizer\Tokens;
 use SplFileInfo;
 use ValueError;
 
-use function array_map;
 use function array_merge;
 use function count;
 use function in_array;
+use function is_bool;
+use function is_float;
+use function is_int;
+use function is_string;
 use function ltrim;
 use function str_contains;
 use function strlen;
@@ -36,8 +39,10 @@ use function substr;
 use function usort;
 
 use const T_CLASS;
+use const T_COMMENT;
 use const T_CURLY_OPEN;
 use const T_DNUMBER;
+use const T_DOC_COMMENT;
 use const T_DOUBLE_ARROW;
 use const T_LNUMBER;
 use const T_NS_SEPARATOR;
@@ -56,6 +61,18 @@ use const T_WHITESPACE;
  * effects (function or method calls, instantiation, ...) are left as they
  * are, so no evaluation order can ever change.
  *
+ * A comment between the opening bracket and the first item of an array
+ * carries a directive for the fixer:
+ *
+ * - "PSBits/alphabetical_array_keys=off" excludes the array from the fix
+ *   entirely - for cases where the item order is part of the semantics,
+ *   like sorting configurations. The directive only applies to the marked
+ *   array, nested arrays keep the default sort.
+ * - "PSBits/alphabetical_array_keys=values" sorts the items by their
+ *   values instead of their keys; the keys may then be string or integer
+ *   literals and every value must be a statically evaluable literal
+ *   (numbers, strings, true, false, null, nested literal arrays).
+ *
  * Like every php-cs-fixer fixer, this class works on the token list: the
  * source file is split into a flat, zero-indexed list of Token objects
  * (type + content), no parser tree - whitespace and comments are tokens,
@@ -66,16 +83,107 @@ use const T_WHITESPACE;
  * nested expression in a single call. Rewriting one array shifts the
  * indices of all tokens behind it, so the fixer stops after each fix and
  * rescans the list, with an iteration cap as a convergence guard.
+ *
+ * @phpstan-type _Item array{first: int, key: string|int, last: int, value: mixed}
  */
 final class AlphabeticalArrayKeysFixer extends AbstractFixer
 {
+    /**
+     * @internal
+     */
+    public const string DIRECTIVE_KEYS = 'keys';
+
+    /**
+     * @internal
+     */
+    public const string DIRECTIVE_OFF = 'off';
+
+    /**
+     * @internal
+     */
+    public const string DIRECTIVE_VALUES = 'values';
+
+    /**
+     * Order of two value-mode items: the literal values in the natural
+     * value order (null, booleans, numbers, strings, arrays; strings
+     * case-insensitive, numbers and arrays in PHP's native order), the
+     * keys as tie-break for equal values - string keys
+     * case-insensitive, integer keys numerical, the remaining key
+     * mixtures in PHP's native order.
+     *
+     * @param _Item $a
+     * @param _Item $b
+     */
+    private static function compareItemsByValue(array $a, array $b): int
+    {
+        $valueA = $a['value'];
+        $valueB = $b['value'];
+
+        $rankA = self::valueRank($valueA);
+        $rankB = self::valueRank($valueB);
+
+        if ($rankA !== $rankB) {
+            return $rankA <=> $rankB;
+        }
+
+        $comparison = is_string($valueA) ? strcasecmp($valueA, $valueB) : $valueA <=> $valueB;
+
+        if (0 !== $comparison) {
+            return $comparison;
+        }
+
+        $keyA = $a['key'];
+        $keyB = $b['key'];
+
+        if (is_int($keyA) && is_int($keyB)) {
+            return $keyA <=> $keyB;
+        }
+
+        if (is_string($keyA) && is_string($keyB)) {
+            return strcasecmp($keyA, $keyB);
+        }
+
+        return $keyA <=> $keyB;
+    }
+
+    /**
+     * The rank of a literal value in the natural value order:
+     * null, booleans, numbers, strings, arrays.
+     */
+    private static function valueRank(mixed $value): int
+    {
+        if (null === $value) {
+            return 0;
+        }
+
+        if (is_bool($value)) {
+            return 1;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return 2;
+        }
+
+        if (is_string($value)) {
+            return 3;
+        }
+
+        return 4;
+    }
+
     public function getDefinition(): FixerDefinitionInterface
     {
         return new FixerDefinition(
-            'Sorts the keys of literal arrays (all string literal keys, side-effect-free values) alphabetically.',
+            'Sorts the keys of literal arrays (all string literal keys, side-effect-free values) alphabetically; a directive comment in an array may exclude it from the fix or switch the sort to the values.',
             [
                 new CodeSample(
                     "<?php\n\$a = [\n    'b' => 2,\n    'a' => 1,\n];\n"
+                ),
+                new CodeSample(
+                    "<?php\n\$a = [\n    // PSBits/alphabetical_array_keys=off\n    'b' => 2,\n    'a' => 1,\n];\n"
+                ),
+                new CodeSample(
+                    "<?php\n\$a = [\n    // PSBits/alphabetical_array_keys=values\n    'b' => 2,\n    'a' => 1,\n];\n"
                 ),
             ],
         );
@@ -137,13 +245,16 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
 
     /**
      * Describes one array item as key plus token range, or null when the
-     * item is not a string-literal key => value pair with a
-     * side-effect-free value, i.e. when it must not be moved.
+     * item is not a key => value pair that this fixer handles, i.e. when
+     * it must not be moved. In key mode the key is a string literal and
+     * the value must be side effect free; in value mode the key may be a
+     * string or integer literal and the value a statically evaluable
+     * literal, which is then carried along for the comparison.
      *
-     * @return null|array{key: string, first: int, last: int}
+     * @return null|_Item
      * @throws PregException
      */
-    private function describeItem(Tokens $tokens, int $start, int $end): ?array
+    private function describeItem(Tokens $tokens, int $start, int $end, bool $values = false): ?array
     {
         $first = $this->skipWhitespace($tokens, $start, $end, true);
         $last  = $this->skipWhitespace($tokens, $end, $start, false);
@@ -152,8 +263,10 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
             return null;
         }
 
-        // every item must be a string literal key => value
-        if (!$this->isStringLiteralToken($tokens, $first)) {
+        // every item must be a literal key => value
+        $key = $this->literalKey($tokens, $first, $values);
+
+        if (null === $key) {
             return null;
         }
 
@@ -169,15 +282,134 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
             return null;
         }
 
-        if (!$this->isSideEffectFreeValue($tokens, $valueStart, $last)) {
-            return null;
+        if (true === $values) {
+            $evaluation = $this->evaluateLiteralValue($tokens, $valueStart, $last);
+
+            if (false === $evaluation['evaluable']) {
+                return null;
+            }
+
+            $value = $evaluation['value'];
+        } else {
+            if (!$this->isSideEffectFreeValue($tokens, $valueStart, $last)) {
+                return null;
+            }
+
+            $value = null;
         }
 
         return [
-            'key'   => substr($tokens[$first]->getContent(), 1, -1),
             'first' => $first,
+            'key'   => $key,
             'last'  => $last,
+            'value' => $value,
         ];
+    }
+
+    /**
+     * Evaluates a value that must be a literal: scalar literals
+     * (numbers, strings, true, false, null), optionally signed numbers,
+     * grouping parentheses and nested array literals of the same.
+     * Anything else (variables, constants, calls, ...) is not statically
+     * evaluable.
+     *
+     * @return array{evaluable: bool, value: mixed}
+     * @throws PregException
+     */
+    private function evaluateLiteralValue(Tokens $tokens, int $start, int $end): array
+    {
+        $start = $this->skipWhitespace($tokens, $start, $end, true);
+        $end   = $this->skipWhitespace($tokens, $end, $start, false);
+
+        if ($start > $end) {
+            return ['evaluable' => false, 'value' => null];
+        }
+
+        $token = $tokens[$start];
+
+        // unary sign on a numeric literal
+        if ($token->equalsAny(['-', '+'])) {
+            $number = $this->skipWhitespace($tokens, $start + 1, $end, true);
+
+            if ($number > $end || !$tokens[$number]->isGivenKind([T_LNUMBER, T_DNUMBER])) {
+                return ['evaluable' => false, 'value' => null];
+            }
+
+            $sign  = '-' === $token->getContent() ? -1 : 1;
+            $value = $tokens[$number]->isGivenKind(T_DNUMBER)
+                ? (float) $tokens[$number]->getContent()
+                : (int) $tokens[$number]->getContent();
+
+            return ['evaluable' => true, 'value' => $sign * $value];
+        }
+
+        if ($start === $end) {
+            if ($token->isGivenKind(T_LNUMBER)) {
+                return ['evaluable' => true, 'value' => (int) $token->getContent()];
+            }
+
+            if ($token->isGivenKind(T_DNUMBER)) {
+                return ['evaluable' => true, 'value' => (float) $token->getContent()];
+            }
+
+            if ($this->isStringLiteralToken($tokens, $start)) {
+                return ['evaluable' => true, 'value' => substr($token->getContent(), 1, -1)];
+            }
+
+            if ($token->isGivenKind(T_STRING)) {
+                $literal = $token->getContent();
+
+                if ('true' === $literal) {
+                    return ['evaluable' => true, 'value' => true];
+                }
+
+                if ('false' === $literal) {
+                    return ['evaluable' => true, 'value' => false];
+                }
+
+                if ('null' === $literal) {
+                    return ['evaluable' => true, 'value' => null];
+                }
+            }
+
+            return ['evaluable' => false, 'value' => null];
+        }
+
+        // grouping parenthesis around the whole value
+        if ($token->equals('(')) {
+            $close = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_PARENTHESIS_BRACE, $start);
+
+            if ($close !== $end) {
+                return ['evaluable' => false, 'value' => null];
+            }
+
+            return $this->evaluateLiteralValue($tokens, $start + 1, $close - 1);
+        }
+
+        // nested array literal
+        if ($token->isGivenKind(CT::T_ARRAY_BRACKET_OPEN)) {
+            $close = $tokens->findBlockEnd(Tokens::BLOCK_TYPE_ARRAY_BRACKET, $start);
+
+            if ($this->skipWhitespace($tokens, $close + 1, $end, true) <= $end) {
+                return ['evaluable' => false, 'value' => null];
+            }
+
+            $value = [];
+
+            foreach ($this->findItemRanges($tokens, $start, $close) as $range) {
+                $item = $this->describeItem($tokens, $range[0], $range[1], true);
+
+                if (null === $item) {
+                    return ['evaluable' => false, 'value' => null];
+                }
+
+                $value[$item['key']] = $item['value'];
+            }
+
+            return ['evaluable' => true, 'value' => $value];
+        }
+
+        return ['evaluable' => false, 'value' => null];
     }
 
     /**
@@ -199,6 +431,43 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         }
 
         return array_reverse($arrays);
+    }
+
+    /**
+     * The [first, last] token ranges of the top-level items of one
+     * array, split at the top-level commas.
+     *
+     * @return list<array{0: int, 1: int}>
+     */
+    private function findItemRanges(Tokens $tokens, int $open, int $close): array
+    {
+        $ranges = [];
+        $start  = $open + 1;
+
+        /*
+         * The tokens between the opening bracket and the first item (a
+         * directive, or any other comment) are no part of an item.
+         */
+        while ($start < $close && $tokens[$start]->isGivenKind([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            ++$start;
+        }
+
+        foreach ($this->findTopLevelCommas($tokens, $start, $close - 1) as $comma) {
+            $ranges[] = [$start, $comma - 1];
+            $start    = $comma + 1;
+        }
+
+        /*
+         * Without a trailing comma the last item ends at the closing bracket;
+         * with one, every item was already captured in the loop above.
+         */
+        $lastMeaningful = $tokens->getPrevMeaningfulToken($close);
+
+        if (null !== $lastMeaningful && !$tokens[$lastMeaningful]->equals(',') && $start <= $close - 1) {
+            $ranges[] = [$start, $close - 1];
+        }
+
+        return $ranges;
     }
 
     /**
@@ -249,37 +518,53 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
     }
 
     /**
-     * Replaces the tokens between the brackets with the items in
-     * alphabetical order. A multi-line array gets one item per line, the
-     * indent of each line is taken from the original line of that item,
-     * so a per-item indentation is preserved; a single-line array keeps
-     * the whitespace padding around its items.
+     * Replaces the tokens between the brackets with the items in sorted
+     * order. A multi-line array gets one item per line, the indent of
+     * each line is taken from the original line of that item, so a
+     * per-item indentation is preserved; a single-line array keeps the
+     * whitespace padding around its items. The tokens between the
+     * opening bracket and the first item (a directive comment, or any
+     * other comment) are carried over unchanged.
      *
      * @throws PregException
      * @throws ValueError
      */
     private function fixArray(Tokens $tokens, int $open, int $close): bool
     {
-        $items = $this->getItems($tokens, $open, $close);
+        $directive = $this->getDirective($tokens, $open, $close);
+
+        if (self::DIRECTIVE_OFF === $directive['mode']) {
+            return false;
+        }
+
+        $values = self::DIRECTIVE_VALUES === $directive['mode'];
+        $items  = $this->getItems($tokens, $open, $close, $values);
 
         if (null === $items) {
             return false;
         }
 
-        $keys = array_map(
-            static fn(array $item): string => $item['key'],
-            $items,
-        );
+        $sortedItems = $items;
 
-        $sorted = $keys;
-        usort($sorted, static fn(string $a, string $b): int => strcasecmp($a, $b));
-
-        if ($sorted === $keys) {
-            return false;
+        if (true === $values) {
+            usort($sortedItems, static fn(array $a, array $b): int => self::compareItemsByValue($a, $b));
+        } else {
+            usort($sortedItems, static fn(array $a, array $b): int => strcasecmp($a['key'], $b['key']));
         }
 
-        $sortedItems = $items;
-        usort($sortedItems, static fn(array $a, array $b): int => strcasecmp($a['key'], $b['key']));
+        $changed = false;
+
+        foreach ($items as $index => $item) {
+            if ($item['first'] !== $sortedItems[$index]['first']) {
+                $changed = true;
+
+                break;
+            }
+        }
+
+        if (false === $changed) {
+            return false;
+        }
 
         $multiLine = false;
 
@@ -293,10 +578,16 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
 
         $newTokens = [];
 
-        if (true === $multiLine) {
-            $newTokens = [new Token([T_WHITESPACE, "\n" . $this->getLineIndent($tokens, $sortedItems[0]['first'])])];
-        } else {
-            $newTokens = $this->getSurroundingWhitespace($tokens, $open);
+        for ($i = $open + 1; $i <= $directive['preItemLast']; ++$i) {
+            $newTokens[] = $tokens[$i];
+        }
+
+        if ([] === $newTokens) {
+            if (true === $multiLine) {
+                $newTokens = [new Token([T_WHITESPACE, "\n" . $this->getLineIndent($tokens, $sortedItems[0]['first'])])];
+            } else {
+                $newTokens = $this->getSurroundingWhitespace($tokens, $open);
+            }
         }
 
         foreach ($sortedItems as $index => $item) {
@@ -329,41 +620,48 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
     }
 
     /**
+     * The directive for one array, read from the comment tokens between
+     * the opening bracket and the first item: no directive (or an
+     * unknown one) keeps the default key sort, "off" excludes the array
+     * from the fix entirely and "values" switches the sort to the
+     * values. The returned index bounds the pre-item region, which the
+     * rewrite carries over unchanged.
+     *
+     * @return array{mode: string, preItemLast: int}
+     * @throws PregException
+     */
+    private function getDirective(Tokens $tokens, int $open, int $close): array
+    {
+        $mode  = self::DIRECTIVE_KEYS;
+        $index = $open + 1;
+
+        while ($index < $close && $tokens[$index]->isGivenKind([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT])) {
+            if ($tokens[$index]->isGivenKind([T_COMMENT, T_DOC_COMMENT])
+                && Preg::match('/PSBits\/alphabetical_array_keys\s*=\s*(off|values)/', $tokens[$index]->getContent(), $matches)
+            ) {
+                $mode = 'off' === $matches[1] ? self::DIRECTIVE_OFF : self::DIRECTIVE_VALUES;
+            }
+
+            ++$index;
+        }
+
+        return ['mode' => $mode, 'preItemLast' => $index - 1];
+    }
+
+    /**
      * Splits the array content into items at the top-level commas and
      * describes each of them. Returns null as soon as one item does not
      * fit the shape this fixer handles, so the whole array is left alone.
      *
-     * @return null|list<array{key: string, first: int, last: int}>
+     * @return null|list<_Item>
      * @throws PregException
      */
-    private function getItems(Tokens $tokens, int $open, int $close): ?array
+    private function getItems(Tokens $tokens, int $open, int $close, bool $values = false): ?array
     {
-        if ($open + 1 > $close - 1) {
-            return null;
-        }
-
         $items = [];
-        $start = $open + 1;
 
-        foreach ($this->findTopLevelCommas($tokens, $open + 1, $close - 1) as $comma) {
-            $item = $this->describeItem($tokens, $start, $comma - 1);
-
-            if (null === $item) {
-                return null;
-            }
-
-            $items[] = $item;
-            $start   = $comma + 1;
-        }
-
-        /*
-         * without a trailing comma the last item ends at the closing bracket;
-         * with one, every item was already described in the loop above
-         */
-        $lastMeaningful = $tokens->getPrevMeaningfulToken($close);
-
-        if (null !== $lastMeaningful && !$tokens[$lastMeaningful]->equals(',')) {
-            $item = $this->describeItem($tokens, $start, $close - 1);
+        foreach ($this->findItemRanges($tokens, $open, $close) as $range) {
+            $item = $this->describeItem($tokens, $range[0], $range[1], $values);
 
             if (null === $item) {
                 return null;
@@ -379,11 +677,13 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         $seen = [];
 
         foreach ($items as $current) {
-            if (isset($seen[$current['key']])) {
+            $identity = is_int($current['key']) ? 'i' . $current['key'] : 's' . $current['key'];
+
+            if (isset($seen[$identity])) {
                 return null;
             }
 
-            $seen[$current['key']] = true;
+            $seen[$identity] = true;
         }
 
         return $items;
@@ -645,6 +945,26 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         $content = $tokens[$index]->getContent();
 
         return 1 < strlen($content) && preg_match('/^([\'"]).*\\1$/s', $content);
+    }
+
+    /**
+     * The literal key of an array item, or null when the token is no
+     * usable key: key mode accepts string literals only, value mode
+     * string and integer literals.
+     */
+    private function literalKey(Tokens $tokens, int $index, bool $values): string|int|null
+    {
+        $token = $tokens[$index];
+
+        if ($this->isStringLiteralToken($tokens, $index)) {
+            return substr($token->getContent(), 1, -1);
+        }
+
+        if (true === $values && $token->isGivenKind(T_LNUMBER)) {
+            return (int) $token->getContent();
+        }
+
+        return null;
     }
 
     /**

@@ -10,16 +10,19 @@ parameters:
   exceptions:
     # With implicitThrows=false a function without @throws is understood as
     # "throws nothing", so the thrown set of callers is driven by the callee's
-    # declared @throws. This is the foundation of the CGL @throws rule:
-    # docblocks must match the thrown exceptions exactly, and fixing a callee
-    # changes what its callers have to declare (the throws-fix loop converges
-    # that cascade).
+    # declared @throws. This drives the CGL @throws rule, which reports a
+    # missing @throws line: the docblock carries the union of the exceptions
+    # thrown on all supported core majors, so a surplus line documents an
+    # exception a different core reports (a line seen by a single major
+    # carries a trailing "// t3:N" marker the analyser ignores). Fixing a
+    # callee changes what its callers have to declare, so the throws-fix
+    # converges the cascade per major and merges the per-major sets after.
     implicitThrows: false
     # Dead-catch reports are a side effect of implicitThrows=false and are
     # out of scope for the CGL.
     reportUncheckedExceptionDeadCatch: false
     # The built-in too-wide check uses supertype coverage semantics and is
-    # replaced by the exact PSBits rule below.
+    # replaced by the PSBits rule below.
     check:
       tooWideThrowType: false
 services:

@@ -4,227 +4,42 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\PhpStan;
 
-use PhpParser\Node;
-use PHPStan\Analyser\Scope;
-use PHPStan\Node\FunctionReturnStatementsNode;
-use PHPStan\Node\MethodReturnStatementsNode;
-use PHPStan\Node\ReturnStatementsNode;
-use PHPStan\PhpDoc\ResolvedPhpDocBlock;
-use PHPStan\PhpDoc\TypeNodeResolver;
 use PHPStan\Rules\IdentifierRuleError;
-use PHPStan\Rules\MultipleNodeTypesRule;
 use PHPStan\Rules\RuleErrorBuilder;
-use PHPStan\Type\FileTypeMapper;
-use PHPStan\Type\Type;
-use PHPStan\Type\TypeUtils;
 
-use function array_map;
-use function array_unique;
-use function array_values;
-use function implode;
-use function sprintf;
-use function usort;
+use function array_diff;
 
 /**
- * Checks that the @throws types of a method or function match exactly the
- * exceptions that are thrown (explicit throw points, including transitive
- * ones that are not caught).
+ * Checks that the @throws docblock of a method or function documents
+ * every exception that is thrown on the active core (explicit throw
+ * points, including transitive ones that are not caught).
+ *
+ * The docblock carries the union of the exceptions thrown on all
+ * supported core majors: a surplus @throws line documents an exception
+ * that a different core reports (a single-major line carries a trailing
+ * "// t3:N" marker that is inert for the analyser), so only a missing
+ * line is an error.
  *
  * The message is machine readable and consumed by the throws docblock
- * applier (bin/qa throws-fix), which rewrites the @throws types to the
- * exact set of thrown exceptions. One error is emitted per function-like
- * construct whose @throws do not match, regardless of how many types
- * differ.
+ * applier (bin/qa throws-fix).
  *
- * The declared types are read tag by tag (never as a combined type) so
- * that every documented exception is taken into account even when the
- * exceptions form a subtype pair.
- *
- * Message format:
- *   Method Class\Name::method() @throws do not match the thrown exceptions: expected \A\B, \C\D, declared none.
- *   Function some\ns\function() @throws do not match the thrown exceptions: expected none, declared \A\B.
- * ("none" = no @throws types at all)
- *
- * @implements MultipleNodeTypesRule<Node>
+ * @see ThrowsDocblockRuleBase
  */
-final class ThrowsDocblockRule implements MultipleNodeTypesRule
+final class ThrowsDocblockRule extends ThrowsDocblockRuleBase
 {
     public const string IDENTIFIER = 'psbits.throwsDocblock';
 
-    public function __construct(
-        private readonly FileTypeMapper   $fileTypeMapper,
-        private readonly TypeNodeResolver $typeNodeResolver,
-    ) {
-    }
-
     /**
-     * @param list<string> $names class names without leading backslash
-     */
-    private static function describe(array $names): string
-    {
-        return [] === $names ? 'none' : implode(', ', array_map(static fn(string $name): string => '\\' . $name, $names));
-    }
-
-    /**
-     * @param list<string> $names
-     * @return list<string> unique, case-insensitively sorted
-     */
-    private static function normalize(array $names): array
-    {
-        $names = array_values(array_unique($names));
-        usort($names, static fn(string $a, string $b): int => strcasecmp($a, $b));
-
-        return $names;
-    }
-
-    /**
-     * @return list<string> object class names (interfaces included), without leading backslash
-     */
-    private static function objectClassNames(?Type $type): array
-    {
-        if (null === $type) {
-            return [];
-        }
-
-        $names = [];
-
-        foreach (TypeUtils::flattenTypes($type) as $flattened) {
-            /*
-             * getObjectClassNames() yields nothing for non-object types, so
-             * no instanceof check is needed.
-             */
-            foreach ($flattened->getObjectClassNames() as $name) {
-                $names[] = $name;
-            }
-        }
-
-        return $names;
-    }
-
-    public function getNodeType(): string
-    {
-        return ReturnStatementsNode::class;
-    }
-
-    public function getNodeTypes(): array
-    {
-        return [
-            MethodReturnStatementsNode::class,
-            FunctionReturnStatementsNode::class,
-        ];
-    }
-
-    public function processNode(Node $node, Scope $scope): array
-    {
-        /*
-         * The registry only dispatches the node types listed in
-         * getNodeTypes(), so the union is the actual input type here.
-         */
-        /** @var MethodReturnStatementsNode|FunctionReturnStatementsNode $node */
-
-        return $this->processReturnStatements($node, $scope);
-    }
-
-    /**
-     * Reads the documented exception classes tag by tag (one entry per
-     * line carrying @throws or @phpstan-throws, @phpstan-throws taking
-     * precedence), so no subtype elimination is applied between the
-     * documented types.
-     *
-     * @return list<string> object class names, without leading backslash
-     */
-    private function declaredClassNames(ResolvedPhpDocBlock $resolved): array
-    {
-        $nameScope = $resolved->getNullableNameScope();
-
-        if (null === $nameScope) {
-            return [];
-        }
-
-        $names = [];
-
-        foreach ($resolved->getPhpDocNodes() as $phpDocNode) {
-            $tagValues = $phpDocNode->getThrowsTagValues('@phpstan-throws');
-
-            if ([] === $tagValues) {
-                $tagValues = $phpDocNode->getThrowsTagValues('@throws');
-            }
-
-            foreach ($tagValues as $tagValue) {
-                $names = [...$names, ...$this->objectClassNames($this->typeNodeResolver->resolve($tagValue->type, $nameScope))];
-            }
-        }
-
-        return $names;
-    }
-
-    /**
+     * @param list<string> $thrown   object class names, without leading backslash
+     * @param list<string> $declared object class names, without leading backslash
      * @return list<IdentifierRuleError>
      */
-    private function processReturnStatements(MethodReturnStatementsNode|FunctionReturnStatementsNode $node, Scope $scope): array
+    protected function report(string $subject, array $thrown, array $declared): array
     {
-        if ($node instanceof MethodReturnStatementsNode) {
-            if ($node->getMethodReflection()->isAbstract()->yes()) {
-                /*
-                 * Abstract and interface methods have no body, so the thrown
-                 * set cannot be determined; their @throws is a contract.
-                 */
-                return [];
-            }
-
-            $method   = $node->getMethodReflection();
-            $subject  = 'Method ' . $method->getDeclaringClass()->getName() . '::' . $method->getName() . '()';
-            $resolved = $this->fileTypeMapper->getResolvedPhpDoc(
-                $scope->getFile(),
-                $method->getDeclaringClass()->getName(),
-                $scope->isInTrait() ? $scope->getTraitReflection()->getName() : null,
-                $method->getName(),
-                null === $node->getDocComment() ? '' : $node->getDocComment()->getText(),
-            );
-            $points = $node->getStatementResult()->getThrowPoints();
-        } else {
-            $function  = $node->getFunctionReflection();
-            $namespace = $scope->getNamespace();
-            $subject   = 'Function ' . (null !== $namespace ? $namespace . '\\' : '') . $function->getName() . '()';
-            $resolved  = $this->fileTypeMapper->getResolvedPhpDoc(
-                $scope->getFile(),
-                null,
-                null,
-                $function->getName(),
-                null === $node->getDocComment() ? '' : $node->getDocComment()->getText(),
-            );
-            $points = $node->getStatementResult()->getThrowPoints();
-        }
-
-        $declared = $this->declaredClassNames($resolved);
-        $thrown   = [];
-
-        foreach ($points as $point) {
-            /*
-             * Implicit points mean "something may be thrown here" and are not
-             * part of the exact thrown set with exceptions.implicitThrows=false.
-             */
-            if (!$point->isExplicit()) {
-                continue;
-            }
-
-            $thrown = [...$thrown, ...$this->objectClassNames($point->getType())];
-        }
-
-        $thrown   = self::normalize($thrown);
-        $declared = self::normalize($declared);
-
-        if ($thrown === $declared) {
+        if ([] === array_diff($thrown, $declared)) {
             return [];
         }
 
-        $message = sprintf(
-            '%s @throws do not match the thrown exceptions: expected %s, declared %s.',
-            $subject,
-            self::describe($thrown),
-            self::describe($declared),
-        );
-
-        return [RuleErrorBuilder::message($message)->identifier(self::IDENTIFIER)->build()];
+        return [RuleErrorBuilder::message(self::message($subject, $thrown, $declared))->identifier(self::IDENTIFIER)->build()];
     }
 }

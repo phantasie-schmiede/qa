@@ -9,6 +9,7 @@ use ValueError;
 
 use function array_map;
 use function array_merge;
+use function array_slice;
 use function array_unique;
 use function array_values;
 use function count;
@@ -18,6 +19,8 @@ use function file_put_contents;
 use function implode;
 use function in_array;
 use function ltrim;
+use function max;
+use function str_starts_with;
 use function strlen;
 use function strrpos;
 use function substr;
@@ -26,14 +29,24 @@ use function trim;
 use function usort;
 
 /**
- * Rewrites the @throws types of the methods and functions that the
- * ThrowsDocblockRule reports, so that the docblock declares exactly the
- * exceptions that are thrown: one name per @throws line, sorted
- * case-insensitively, no @throws at all when nothing is thrown.
+ * Rewrites the @throws lines of the methods and functions named in the
+ * throws rule messages (psbits.throwsDocblock for the lint rule,
+ * psbits.throwsDocblockAudit for the fixer's audit rule): one name per
+ * line, sorted case-insensitively, no exception lines at all when the
+ * target set is empty.
  *
  * The applier is line based. It locates the signature named in the rule
  * message and rewrites, completes or removes the docblock above it (a
  * docblock sits directly above the signature or the attributes above it).
+ *
+ * Two write modes:
+ * - additive (the per-core fix loop): the @throws lines of the docblock
+ *   are extended by the names of the message; existing lines (including
+ *   their "// t3:N" markers) are preserved, new lines carry no marker.
+ * - exact (the final merge): the @throws lines are replaced by the
+ *   names of the message, which carry their markers (a line seen by a
+ *   single supported core is marked "// t3:N"), and lines the message
+ *   does not carry are removed.
  *
  * Every rewritten docblock follows the house layout: the description,
  * one blank star line, then all tags sorted by tag name without blank
@@ -42,19 +55,66 @@ use function usort;
  *
  * The @throws lines use the short name of the exception and the missing
  * use statement is added to the file (an exception from the own namespace
- * needs no import; a colliding short name gets a descriptive alias).
+ * needs no import; a colliding short name gets a descriptive alias);
+ * the use statements orphaned by removed lines are dropped by the
+ * php-cs-fixer run (no_unused_imports).
  */
 final class ThrowsDocblockApplier
 {
-    private const string CLASS_PATTERN     = '/^\s*(?:(?:final|abstract|readonly)\s+)*(?:class|trait|enum)\s+([A-Za-z_]\w*)/';
-    private const string HEREDOC_PATTERN   = '/<<<[ \t]*([\'"]?)([A-Za-z_]\w*)\1[ \t]*$/D';
-    private const string MESSAGE_PATTERN   = '#^(?:Method (?<class>[A-Za-z0-9_\\\\]+)::(?<name>[A-Za-z_][A-Za-z0-9_]*)\(\)|Function (?<function>[A-Za-z0-9_\\\\]+)\(\)) @throws do not match the thrown exceptions: expected (?<expected>.+), declared (?<declared>.+)\.$#';
-    private const string NAMESPACE_PATTERN = '/^\s*namespace\s+([A-Za-z0-9_\\\\]+)\s*;/';
-    private const string SIGNATURE_PATTERN = '/^(\s*)(?:(?:final|abstract)\s+)*(?:(?:public|protected|private)\s+)*(?:static\s+)?function\s+([A-Za-z_]\w*)\s*\(/';
+    private const string CLASS_PATTERN       = '/^\s*(?:(?:final|abstract|readonly)\s+)*(?:class|trait|enum)\s+([A-Za-z_]\w*)/';
+    private const string HEREDOC_PATTERN     = '/<<<[ \t]*([\'"]?)([A-Za-z_]\w*)\1[ \t]*$/D';
+    private const string MESSAGE_PATTERN     = '#^(?:Method (?<class>[A-Za-z0-9_\\\\]+)::(?<name>[A-Za-z_][A-Za-z0-9_]*)\(\)|Function (?<function>[A-Za-z0-9_\\\\]+)\(\)) @throws do not match the thrown exceptions: expected (?<expected>.+), declared (?<declared>.+)\.$#';
+    private const string NAME_VALUE_PATTERN  = '/^(?<name>\\\\?\S+)(?:\s+\/\/\s*t3:(?<core>13|14))?\s*$/';
+    private const string NAMESPACE_PATTERN   = '/^\s*namespace\s+([A-Za-z0-9_\\\\]+)\s*;/';
+    private const string SIGNATURE_PATTERN   = '/^(\s*)(?:(?:final|abstract)\s+)*(?:(?:public|protected|private)\s+)*(?:static\s+)?function\s+([A-Za-z_]\w*)\s*\(/';
+    private const string THROW_ENTRY_PATTERN = '/^@(?:phpstan-)?throws\s+(?<name>\S+)(?:\s+\/\/\s*t3:(?<core>13|14))?\s*$/';
+
+    /**
+     * Parses a rule message; the name list may carry trailing marker
+     * comments (the merge messages of the throws fixer do).
+     *
+     * @return null|array{
+     *   class: ?string,
+     *   name: string,
+     *   expected: list<array{name: string, marker: ?string}>,
+     *   declared: list<string>,
+     * }
+     */
+    public static function parseMessage(string $message): ?array
+    {
+        if (1 !== preg_match(self::MESSAGE_PATTERN, $message, $matches)) {
+            return null;
+        }
+
+        $declared = [];
+
+        if ('none' !== $matches['declared']) {
+            foreach (explode(', ', $matches['declared']) as $name) {
+                $declared[] = ltrim($name, '\\');
+            }
+
+            usort($declared, static fn(string $a, string $b): int => strcasecmp($a, $b));
+        }
+
+        return [
+            'class'    => '' === $matches['class'] ? null : $matches['class'],
+            'declared' => $declared,
+            'expected' => self::parseNames($matches['expected']),
+            'name'     => '' !== $matches['name'] ? $matches['name'] : $matches['function'],
+        ];
+    }
 
     private static function charAt(string $line, int $position): ?string
     {
         return $position < strlen($line) ? $line[$position] : null;
+    }
+
+    /**
+     * @return string the trailing marker comment or an empty string
+     */
+    private static function markerSuffix(?string $marker): string
+    {
+        return null === $marker ? '' : ' // t3:' . $marker;
     }
 
     /**
@@ -164,38 +224,49 @@ final class ThrowsDocblockApplier
     }
 
     /**
-     * @return null|array{class: ?string, name: string, names: list<string>}
+     * Parses the name list of a rule message; a name may carry a trailing
+     * marker comment (the merge messages of the throws fixer do).
+     *
+     * @return list<array{name: string, marker: ?string}> names without a
+     *                                                    leading backslash,
+     *                                                    case-insensitively
+     *                                                    sorted
      */
-    private static function parseMessage(string $message): ?array
+    private static function parseNames(string $names): array
     {
-        if (1 !== preg_match(self::MESSAGE_PATTERN, $message, $matches)) {
-            return null;
-        }
+        $items = [];
 
-        $names = [];
-
-        if ('none' !== $matches['expected']) {
-            foreach (explode(', ', $matches['expected']) as $name) {
-                $names[] = ltrim($name, '\\');
+        if ('none' !== $names) {
+            foreach (explode(', ', $names) as $name) {
+                if (1 === preg_match(self::NAME_VALUE_PATTERN, $name, $match)) {
+                    $items[] = [
+                        'marker' => $match['core'] ?? null,
+                        'name'   => ltrim($match['name'], '\\'),
+                    ];
+                }
             }
         }
 
-        usort($names, static fn(string $a, string $b): int => strcasecmp($a, $b));
+        usort($items, static fn(array $a, array $b): int => strcasecmp($a['name'], $b['name']));
 
-        return [
-            'class' => '' === $matches['class'] ? null : $matches['class'],
-            'name'  => '' !== $matches['name'] ? $matches['name'] : $matches['function'],
-            'names' => $names,
-        ];
+        return $items;
     }
 
     /**
      * @param list<array{line: int, message: string}> $entries rule messages for one file
+     * @param bool                                    $exact   true for the final merge (the
+     *                                                         exception lines become the
+     *                                                         message's names, the lines the
+     *                                                         message does not carry are
+     *                                                         removed); false for the per-core
+     *                                                         fix loop (the message's names
+     *                                                         are added, everything else is
+     *                                                         kept)
      * @return array{fixed: int, skipped: list<string>}
      * @throws RuntimeException
      * @throws ValueError
      */
-    public function apply(string $filePath, array $entries): array
+    public function apply(string $filePath, array $entries, bool $exact = false): array
     {
         $content = file_get_contents($filePath);
 
@@ -222,11 +293,18 @@ final class ThrowsDocblockApplier
                 continue;
             }
 
+            $markers = [];
+
+            foreach ($parsed['expected'] as $item) {
+                $markers[$item['name']] = $item['marker'];
+            }
+
             $targets[] = [
-                'line'  => $entry['line'],
-                'class' => $parsed['class'],
-                'name'  => $parsed['name'],
-                'names' => $parsed['names'],
+                'class'   => $parsed['class'],
+                'line'    => $entry['line'],
+                'markers' => $markers,
+                'name'    => $parsed['name'],
+                'names'   => array_map(static fn(array $item): string => $item['name'], $parsed['expected']),
             ];
         }
 
@@ -248,30 +326,50 @@ final class ThrowsDocblockApplier
              * sets that resolve to the same signature into one edit.
              */
             if (!isset($bySignature[$candidate[0]])) {
-                $bySignature[$candidate[0]] = ['candidate' => $candidate, 'names' => []];
+                $bySignature[$candidate[0]] = ['candidate' => $candidate, 'markers' => [], 'names' => []];
             }
 
-            $bySignature[$candidate[0]]['names'] = array_merge($bySignature[$candidate[0]]['names'], $target['names']);
+            $bySignature[$candidate[0]]['names']   = array_merge($bySignature[$candidate[0]]['names'], $target['names']);
+            $bySignature[$candidate[0]]['markers'] = array_merge($bySignature[$candidate[0]]['markers'], $target['markers']);
         }
 
+        $uses     = $this->parseUses($lines);
         $allNames = [];
 
-        foreach ($bySignature as $group) {
-            $allNames = array_merge($allNames, $group['names']);
-        }
-
-        $imports = $this->resolveImports($lines, array_values(array_unique($allNames)));
-
-        foreach ($bySignature as $group) {
-            $names = array_values(array_unique($group['names']));
+        foreach ($bySignature as $key => $group) {
+            $names   = array_values(array_unique($group['names']));
+            $markers = $group['markers'];
 
             usort($names, static fn(string $a, string $b): int => strcasecmp($a, $b));
 
-            $display = array_map(static fn(string $name): string => $imports['display'][$name], $names);
+            if (false === $exact) {
+                /*
+                 * The fix loop only adds: a @throws line that the
+                 * message does not carry is kept as is (it belongs to
+                 * another supported core or waits for the final merge),
+                 * together with its marker.
+                 */
+                foreach ($this->existingThrowEntries($lines, $group['candidate']) as $existing) {
+                    $fqcn = $this->resolveDisplayName($existing['display'], $uses);
 
-            usort($display, static fn(string $a, string $b): int => strcasecmp($a, $b));
+                    if (!in_array($fqcn, $names, true)) {
+                        $names[] = $fqcn;
+                        usort($names, static fn(string $a, string $b): int => strcasecmp($a, $b));
+                    }
 
-            $edit = $this->editForCandidate($lines, $group['candidate'], $display);
+                    $markers[$fqcn] = $existing['marker'] ?? ($markers[$fqcn] ?? null);
+                }
+            }
+
+            $bySignature[$key]['names']   = $names;
+            $bySignature[$key]['markers'] = $markers;
+            $allNames                     = array_merge($allNames, $names);
+        }
+
+        $imports = $this->resolveImports($uses, array_values(array_unique($allNames)));
+
+        foreach ($bySignature as $group) {
+            $edit = $this->editForCandidate($lines, $group['candidate'], $group['names'], $group['markers'], $imports);
 
             if (null === $edit) {
                 continue;
@@ -367,20 +465,22 @@ final class ThrowsDocblockApplier
     }
 
     /**
-     * @param list<string>             $lines
-     * @param array{0: int, 1: string} $candidate [signatureIndex (0-based), indent]
-     * @param list<string>             $names     display names (short name or alias)
+     * @param list<string>                                               $lines
+     * @param array{0: int, 1: string}                                   $candidate [signatureIndex (0-based), indent]
+     * @param list<string>                                               $names     exception FQCNs without a leading backslash
+     * @param array<string, null|string>                                 $markers   marker core per FQCN or null
+     * @param array{display: array<string, string>, lines: list<string>} $imports
      * @return null|array{0: int, 1: int, 2: list<string>} [startIdx, endIdx, replacementLines]
      * @throws ValueError
      */
-    private function editForCandidate(array $lines, array $candidate, array $names): ?array
+    private function editForCandidate(array $lines, array $candidate, array $names, array $markers, array $imports): ?array
     {
         [$signatureIndex, $indent]          = $candidate;
         $scan                               = $this->scanAbove($lines, $signatureIndex);
         [$docStart, $docEnd, $attributeTop] = $scan;
 
         if (null !== $docStart && null !== $docEnd) {
-            return $this->rewriteExistingDocblock($lines, $docStart, $docEnd, $names);
+            return $this->rewriteExistingDocblock($lines, $docStart, $docEnd, $names, $markers, $imports);
         }
 
         if ([] === $names) {
@@ -391,12 +491,56 @@ final class ThrowsDocblockApplier
         $block    = [$indent . '/**'];
 
         foreach ($names as $name) {
-            $block[] = $indent . ' * @throws ' . $name;
+            $block[] = $indent . ' * @throws ' . $imports['display'][$name] . self::markerSuffix($markers[$name] ?? null);
         }
 
         $block[] = $indent . ' */';
 
         return [$position, $position - 1, $block];
+    }
+
+    /**
+     * Reads the @throws / @phpstan-throws lines of the docblock above the
+     * candidate; a single-line docblock is split in a local copy.
+     *
+     * @param list<string>             $lines
+     * @param array{0: int, 1: string} $candidate [signatureIndex (0-based), indent]
+     * @return list<array{display: string, marker: ?string}>
+     */
+    private function existingThrowEntries(array $lines, array $candidate): array
+    {
+        $scan = $this->scanAbove($lines, $candidate[0]);
+
+        if (null === $scan[0] || null === $scan[1]) {
+            return [];
+        }
+
+        if ($scan[0] === $scan[1]) {
+            if (1 !== preg_match('/^\s*\/\*\*(.*)\*\/\s*$/', $lines[$scan[0]], $single)) {
+                return [];
+            }
+
+            $parts = trim($single[1]);
+            $parts = '' === $parts ? [] : preg_split('/ (?=@\w)/', $parts);
+        } else {
+            $parts = array_map(
+                static fn(string $line): string => ltrim($line, " \t*"),
+                array_slice($lines, $scan[0] + 1, max(0, $scan[1] - $scan[0] - 1)),
+            );
+        }
+
+        $entries = [];
+
+        foreach ($parts as $part) {
+            if (1 === preg_match(self::THROW_ENTRY_PATTERN, $part, $match)) {
+                $entries[] = [
+                    'display' => $match['name'],
+                    'marker'  => $match['core'] ?? null,
+                ];
+            }
+        }
+
+        return $entries;
     }
 
     /**
@@ -538,6 +682,38 @@ final class ThrowsDocblockApplier
     }
 
     /**
+     * Resolves the display name of an @throws line back to the exception
+     * FQCN (without leading backslash): a backslash-prefixed FQCN counts
+     * as itself, an imported short name (or alias) resolves to its use
+     * statement, and an unimported short name is taken from the own
+     * namespace; a name without a namespace to fall back on is returned
+     * unchanged.
+     *
+     * @param array{
+     *   namespace: ?string,
+     *   byFqcn: array<string, array{kind: string, short: string}>,
+     * } $uses the parseUses() result
+     */
+    private function resolveDisplayName(string $display, array $uses): string
+    {
+        if (str_starts_with($display, '\\')) {
+            return ltrim($display, '\\');
+        }
+
+        foreach ($uses['byFqcn'] as $fqcn => $info) {
+            if ('class' === $info['kind'] && $info['short'] === $display) {
+                return $fqcn;
+            }
+        }
+
+        if (null !== $uses['namespace']) {
+            return $uses['namespace'] . '\\' . $display;
+        }
+
+        return $display;
+    }
+
+    /**
      * Resolves the display name and the missing use statements for the
      * exception FQCNs.
      *
@@ -546,18 +722,22 @@ final class ThrowsDocblockApplier
      * alias. Without a namespace (or with unparseable imports) the FQCN
      * with a leading backslash stays the only safe form.
      *
-     * @param list<string> $lines
+     * @param array{
+     *   namespace: ?string,
+     *   unparseable: bool,
+     *   takenShorts: array<string, true>,
+     *   byFqcn: array<string, array{kind: string, short: string}>,
+     * } $uses the parseUses() result
      * @param list<string> $names exception FQCNs without a leading backslash
      * @return array{display: array<string, string>, lines: list<string>}
      * @throws ValueError
      */
-    private function resolveImports(array $lines, array $names): array
+    private function resolveImports(array $uses, array $names): array
     {
         if ([] === $names) {
             return ['display' => [], 'lines' => []];
         }
 
-        $uses        = $this->parseUses($lines);
         $display     = [];
         $importLines = [];
 
@@ -609,12 +789,14 @@ final class ThrowsDocblockApplier
      * exception tags are replaced with one line per name in $names, and
      * a docblock without description and without tags is dropped.
      *
-     * @param list<string> $lines
-     * @param list<string> $names
+     * @param list<string>                                               $lines
+     * @param list<string>                                               $names   exception FQCNs without a leading backslash
+     * @param array<string, null|string>                                 $markers marker core per FQCN or null
+     * @param array{display: array<string, string>, lines: list<string>} $imports
      * @return null|array{0: int, 1: int, 2: list<string>}
      * @throws ValueError
      */
-    private function rewriteExistingDocblock(array $lines, int $docStart, int $docEnd, array $names): ?array
+    private function rewriteExistingDocblock(array $lines, int $docStart, int $docEnd, array $names, array $markers, array $imports): ?array
     {
         if (1 !== preg_match('/^(\s*)/', $lines[$docStart], $indentMatch)) {
             return null;
@@ -712,15 +894,17 @@ final class ThrowsDocblockApplier
             array_pop($description);
         }
 
-        $tag        = $hasPhpStanTag ? 'phpstan-throws' : 'throws';
-        $throwLines = [];
+        $tag          = $hasPhpStanTag ? 'phpstan-throws' : 'throws';
+        $throwEntries = [];
 
         foreach ($names as $name) {
-            $throwLines[] = $indent . ' * @' . $tag . ' ' . $name;
+            $throwEntries[] = [$imports['display'][$name], $markers[$name] ?? null];
         }
 
-        foreach ($throwLines as $line) {
-            $tagChunks[] = [$line];
+        usort($throwEntries, static fn(array $a, array $b): int => strcasecmp($a[0], $b[0]));
+
+        foreach ($throwEntries as [$display, $marker]) {
+            $tagChunks[] = [$indent . ' * @' . $tag . ' ' . $display . self::markerSuffix($marker)];
         }
 
         /*
