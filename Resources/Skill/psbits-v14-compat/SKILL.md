@@ -1,6 +1,6 @@
 ---
 name: psbits-v14-compat
-description: Reference for TYPO3 v13.4 and v14.3 dual compatibility in PSBits extensions - TCA configuration, Extbase models and localization, event listeners, FlexForm setup, the Functional testing framework, PHPStan docblocks, Fluid 5. Use when writing or reviewing code that must run on both TYPO3 major versions, when upgrading to v14, when debugging v13/v14 behavior differences, or when defining TCA or functional tests.
+description: Reference for TYPO3 v13.4 and v14.3 dual compatibility in PSBits extensions - TCA configuration, Extbase models and localization, event listeners, FlexForm setup, the Functional testing framework, PHPStan docblocks, @throws divergence between core majors, Fluid 5. Use when writing or reviewing code that must run on both TYPO3 major versions, when upgrading to v14, when debugging v13/v14 behavior differences, or when defining TCA or functional tests.
 ---
 
 # PSBits v13.4/v14.3 Dual Compatibility
@@ -56,6 +56,19 @@ against both core versions.
   contexts).
 - Extbase `Annotation\*` classes are aliased to `Attribute\*` on v14 via the class alias
   loader; model code does not need changes.
+
+## `@throws` divergence between core majors
+
+A version-gated code path can throw different exceptions on the
+different core majors. The CGL `@throws` rule therefore checks a
+superset, not equality: the docblock of a method or function must
+document every exception thrown on any supported major, and surplus
+lines are tolerated. `composer fix:throws` converges the docblocks
+against the full major matrix (switching the installed core per
+matrix entry), writes a trailing `// t3:13` / `// t3:14` marker on
+the lines a single major sees, and drops the lines no major sees. The
+markers are documentation, not code: the analysers ignore them (CGL
+skill, 3; the mechanics live in its tooling file).
 
 ## Extbase localization
 

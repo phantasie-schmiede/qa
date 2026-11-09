@@ -65,8 +65,12 @@ repository are added:
   `Configuration/TypoScript`)
 - `lint:yaml` (needs the `Configuration` directory)
 - `lint:xlf` / `fix:xlf` (check/fix the XLIFF trans-unit id order, need
-  `*.xlf` files) and `fix:throws` (rewrite stale `@throws` docblocks in a
-  PHPStan loop, needs the PHPStan configuration)
+  `*.xlf` files) and `fix:throws` (rewrite the `@throws` docblocks
+  against the full matrix of supported core majors: the tooling
+  switches the installed core per matrix entry, converges the PHPStan
+  audit loop per major, then merges the per-major sets into one
+  docblock with `// t3:N` markers on the major-specific lines, needs
+  the PHPStan configuration and network access for the core switches)
 
 `bin/qa sync` also creates `lint:all`, `fix:all` and `qa` when missing. The
 `test:*` scripts and the `post-install-cmd` / `post-update-cmd` bootstrap

@@ -118,8 +118,12 @@ final class Application
                     the installed package, and verify that the caller
                     composer.json carries the shared QA scripts (CI gate)
       qa paths      Print the locations of the shared QA resources
-      qa throws-fix Rewrite the @throws docblocks to the exactly thrown
-                    exceptions (phpstan loop, max 10 fix rounds)
+      qa throws-fix Rewrite the @throws docblocks against all supported
+                    core majors (phpstan loop per major, max 25 fix
+                    rounds each): the docblocks end up as the union of
+                    the per-major thrown sets, a "// t3:N" marker on
+                    the lines a single major sees, the lines no major
+                    sees are removed, and the starting core is restored
       qa xlf-check  Report the XLIFF files with unsorted trans-unit ids
       qa xlf-fix    Sort the XLIFF trans-unit ids alphabetically per body
 

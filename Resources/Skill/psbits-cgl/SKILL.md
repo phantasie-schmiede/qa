@@ -9,8 +9,8 @@ The CGL is the shared code style of all PSBits extensions. Every rule is
 either enforced by the `psbits/qa` tooling (the repo's `lint:all` /
 `fix:all`) or is an AI-side convention: follow it when generating code,
 but do not install tooling for it. How the tooling actually works (the
-fix:all order, the throws-fix cascade, the PERFORMANCE_FUNCTIONS list)
-is in `TOOLING.md` in this skill.
+fix:all order, the throws-fix full matrix, the PERFORMANCE_FUNCTIONS
+list) is in `TOOLING.md` in this skill.
 
 ## The rules
 
@@ -29,23 +29,30 @@ when it drops the only tags of a docblock (see 4): the shell goes with
 the tags.
 Tooling: `PSBits/empty_comments` (php-cs-fixer).
 
-### 3. `@throws` matches the thrown exceptions exactly
+### 3. `@throws` documents every supported core major
 
-- The `@throws` list of a method or function is the **exact set** of
-  exceptions that can escape it - no more, no less. Documenting a parent
-  class to cover a child (or vice versa) is a violation; document the
-  most specific class that is thrown.
+- The `@throws` list of a method or function is the **union** of the
+  exceptions that can escape it on all supported TYPO3 core majors
+  (v13.4 and v14.3): a missing line is an error, a surplus line is
+  tolerated. Document the most specific class that is thrown -
+  documenting a parent class to cover a child is no substitute for the
+  child's own line.
+- A line that only one major sees carries a trailing marker comment
+  `// t3:13` or `// t3:14`; lines seen by every major are unmarked.
+  The marker is documentation, not code: the analysers ignore it, the
+  CS-Fixer keeps it.
 - One `@throws` **per line**, sorted case-insensitively, no duplicates,
   no descriptions, always by **short name** with a `use` statement (see
   8).
-- If nothing is thrown, there is **no `@throws` at all** - and therefore
-  (see 4) often no docblock at all.
+- If nothing is thrown on any supported major, there is **no
+  `@throws` at all** - and therefore (see 4) often no docblock at all.
 - Abstract and interface methods have no body; their `@throws` is a
   contract and is not checked.
 - Tooling: the `psbits.throwsDocblock` PHPStan rule (shared baseline,
-  `exceptions.implicitThrows: false`) reports every mismatch;
-  `composer fix:throws` rewrites the docblocks (see `TOOLING.md` for the
-  cascade loop and its abort).
+  `exceptions.implicitThrows: false`) reports every missing line;
+  `composer fix:throws` rewrites the docblocks against the full major
+  matrix, writes the markers, and drops the lines no major sees (see
+  `TOOLING.md`).
 
 ### 4. `@param` / `@return` only carry what the type hints cannot
 
