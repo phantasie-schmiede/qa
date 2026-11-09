@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 /**
  * Fake phpstan binary for the ThrowsFixerTest orchestration tests: prints
- * the staged JSON responses (one per call, in order) and counts the calls.
- * The working directory is the fixture repository root.
+ * the staged JSON responses (one per call, in order), counts the calls, and
+ * logs every invocation. The working directory is the fixture repository
+ * root.
  */
 $state = getcwd() . '/.state';
 $call  = is_file($state . '/phpstan-calls') ? (int) file_get_contents($state . '/phpstan-calls') : 0;
 file_put_contents($state . '/phpstan-calls', (string) ($call + 1));
+file_put_contents($state . '/phpstan.log', json_encode($argv) . "\n", FILE_APPEND);
 
 $responses = json_decode((string) file_get_contents($state . '/responses.json'), true);
 
