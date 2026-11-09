@@ -70,7 +70,22 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
   literals, the keys are sorted case-insensitively. Tooling:
   `PSBits/alphabetical_array_keys` (php-cs-fixer). Arrays with dynamic
   keys or side-effect-carrying values are left alone by the tooling -
-  do not reorder them by hand either.
+  do not reorder them by hand either. Two per-array exceptions are
+  declared with a directive in a comment between the opening bracket
+  and the first item (the directive applies to the marked array only,
+  nested arrays keep the default):
+
+  - `// PSBits/alphabetical_array_keys=off` - the array is excluded
+    from the sort because the item order is part of the semantics
+    (e.g. sorting configurations); the reason may follow the directive
+    on the same line.
+  - `// PSBits/alphabetical_array_keys=values` - the items are sorted
+    by their values instead of the keys: the keys may then be string
+    or integer literals, and every value must be a statically
+    evaluable literal (numbers, strings, true, false, null, nested
+    literal arrays). The order is the natural value order (null,
+    false, true, numbers, strings, arrays; strings
+    case-insensitive); equal values fall back to the key order.
 - **JSON keys**: same order as array keys (JSON that lives in PHP files
   is an array; in standalone `.json` files apply the rule when writing)
   - with two tool-managed exceptions: `composer.json` follows the
