@@ -124,8 +124,10 @@ final class Application
                     the per-major thrown sets, a "// t3:N" marker on
                     the lines a single major sees, the lines no major
                     sees are removed, and the starting core is restored
-      qa xlf-check  Report the XLIFF files with unsorted trans-unit ids
-      qa xlf-fix    Sort the XLIFF trans-unit ids alphabetically per body
+      qa xlf-check  Report the XLIFF files with unsorted trans-unit or
+                    group ids
+      qa xlf-fix    Sort the XLIFF trans-unit and group ids
+                    alphabetically per body and per group
 
     The repository root is taken from PSBITS_QA_REPO_ROOT or the current
     working directory.
@@ -764,7 +766,7 @@ final class Application
             $result = $sorter->check($files);
 
             foreach ($result['unsorted'] as $file) {
-                echo 'xlf: unsorted trans-unit ids in ' . self::relative($root, $file) . "\n";
+                echo 'xlf: unsorted trans-unit/group ids in ' . self::relative($root, $file) . "\n";
             }
 
             foreach ($result['problems'] as $problem) {
@@ -772,7 +774,7 @@ final class Application
             }
 
             if ([] === $result['unsorted'] && [] === $result['problems']) {
-                echo 'xlf: trans-unit ids sorted in ' . count($files) . ' file(s)' . "\n";
+                echo 'xlf: trans-unit and group ids sorted in ' . count($files) . ' file(s)' . "\n";
 
                 return 0;
             }
@@ -783,11 +785,11 @@ final class Application
         $result = $sorter->apply($files);
 
         if ([] === $result['changed']) {
-            echo 'xlf: trans-unit ids already sorted in ' . count($files) . ' file(s)' . "\n";
+            echo 'xlf: trans-unit and group ids already sorted in ' . count($files) . ' file(s)' . "\n";
         }
 
         foreach ($result['changed'] as $file) {
-            echo 'xlf: sorted trans-unit ids in ' . self::relative($root, $file) . "\n";
+            echo 'xlf: sorted trans-unit and group ids in ' . self::relative($root, $file) . "\n";
         }
 
         foreach ($result['skipped'] as $skip) {
