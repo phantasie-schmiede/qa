@@ -25,8 +25,23 @@ parameters:
     # replaced by the PSBits rule below.
     check:
       tooWideThrowType: false
+  ignoreErrors:
+      # The built-in @throws check validates the combined tag type against the
+      # installed core only, while the docblock carries the union of the
+      # exceptions thrown on all supported core majors (CGL rule 3); a line
+      # seen by a single major names a class the installed core does not
+      # provide. psbits.throwsThrowable is marker aware and replaces the check.
+      -
+        identifier: throws.notThrowable
+        reportUnmatched: false
 services:
   -
     class: PSBits\Qa\PhpStan\ThrowsDocblockRule
+    tags:
+      - phpstan.rules.rule
+  -
+    class: PSBits\Qa\PhpStan\ThrowsThrowableRule
+    arguments:
+      installedJsonPath: %currentWorkingDirectory%/.Build/vendor/composer/installed.json
     tags:
       - phpstan.rules.rule
