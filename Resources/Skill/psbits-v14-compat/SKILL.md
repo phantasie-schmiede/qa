@@ -68,7 +68,18 @@ against the full major matrix (switching the installed core per
 matrix entry), writes a trailing `// t3:13` / `// t3:14` marker on
 the lines a single major sees, and drops the lines no major sees. The
 markers are documentation, not code: the analysers ignore them (CGL
-skill, 3; the mechanics live in its tooling file).
+skill, 3; the mechanics live in its tooling file). The shared
+baseline ignores PHPStan's built-in `throws.notThrowable` check (it
+validates the combined `@throws` type against the installed core only
+and would report a single-major line naming a class the other core
+provides); the marker-aware `psbits.throwsThrowable` rule takes its
+place: a `@throws` type is valid when it is a Throwable subtype, or
+when every class the installed core does not provide is covered by a
+`// t3:N` marker naming a different major. The installed major is read
+from `.Build/vendor/composer/installed.json`; when it cannot be
+determined, every marker is tolerated. A resolvable non-Throwable, an
+unmarked missing class, and a marker for the installed major itself
+are still errors.
 
 ## Extbase localization
 

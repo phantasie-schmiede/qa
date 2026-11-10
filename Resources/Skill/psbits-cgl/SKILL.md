@@ -39,8 +39,11 @@ Tooling: `PSBits/empty_comments` (php-cs-fixer).
   child's own line.
 - A line that only one major sees carries a trailing marker comment
   `// t3:13` or `// t3:14`; lines seen by every major are unmarked.
-  The marker is documentation, not code: the analysers ignore it, the
-  CS-Fixer keeps it.
+  The marker is documentation, not code: the CS-Fixer keeps it, and the
+  `psbits.throwsThrowable` PHPStan rule reads it - a class the installed
+  core does not provide is valid only on a line marked for the other
+  major (the rule replaces PHPStan's built-in `throws.notThrowable`
+  check, which sees the installed core only).
 - One `@throws` **per line**, sorted case-insensitively, no duplicates,
   no descriptions, always by **short name** with a `use` statement (see
   8).
@@ -49,10 +52,12 @@ Tooling: `PSBits/empty_comments` (php-cs-fixer).
 - Abstract and interface methods have no body; their `@throws` is a
   contract and is not checked.
 - Tooling: the `psbits.throwsDocblock` PHPStan rule (shared baseline,
-  `exceptions.implicitThrows: false`) reports every missing line;
-  `composer fix:throws` rewrites the docblocks against the full major
-  matrix, writes the markers, and drops the lines no major sees (see
-  `TOOLING.md`).
+  `exceptions.implicitThrows: false`) reports every missing line, the
+  marker-aware `psbits.throwsThrowable` rule validates every `@throws`
+  type against Throwable (taking the built-in `throws.notThrowable`
+  check's place, ignored in the shared baseline); `composer fix:throws`
+  rewrites the docblocks against the full major matrix, writes the
+  markers, and drops the lines no major sees (see `TOOLING.md`).
 
 ### 4. `@param` / `@return` only carry what the type hints cannot
 

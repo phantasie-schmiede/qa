@@ -9,9 +9,12 @@ not in the repository (see the `psbits-qa` skill for the layout).
 ## The commands
 
 - `composer lint:all` - the QA gate: `analyze:php` (PHPStan with the
-  shared baseline incl. the `psbits.throwsDocblock` rule), `lint:xlf`,
-  the php-cs-fixer dry-run with all the `PSBits/*` fixers, yaml/
-  typoscript/class linters.
+  shared baseline incl. the `psbits.throwsDocblock` rule and the
+  marker-aware `psbits.throwsThrowable` rule, which takes the built-in
+  `throws.notThrowable` check's place - that check sees the installed
+  core only, while the docblock carries the union of all supported
+  core majors), `lint:xlf`, the php-cs-fixer dry-run with all the
+  `PSBits/*` fixers, yaml/typoscript/class linters.
 - `composer fix:all` - applies the fixes in this order: `fix:classes`,
   `fix:composer` (the composer.json normalization), `fix:htmlxml`,
   `fix:json` (Prettier for the package.json), `fix:throws` (the
