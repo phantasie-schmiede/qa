@@ -64,8 +64,9 @@ repository are added:
 - `lint:typoscript` (needs at least one `.typoscript` file below
   `Configuration/TypoScript`)
 - `lint:yaml` (needs the `Configuration` directory)
-- `lint:xlf` / `fix:xlf` (check/fix the XLIFF trans-unit id order, need
-  `*.xlf` files) and `fix:throws` (rewrite the `@throws` docblocks
+- `lint:xlf` / `fix:xlf` (check/fix the XLIFF trans-unit and group id
+  order, need `*.xlf` files) and `fix:throws` (rewrite the `@throws`
+  docblocks
   against the full matrix of supported core majors: the tooling
   switches the installed core per matrix entry, converges the PHPStan
   audit loop per major, then merges the per-major sets into one

@@ -92,8 +92,10 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
   canonical key order of `ergebnis/composer-normalize`
   (`lint:composer` / `fix:composer`), and `package.json` carries the
   Prettier format (2-space indentation, the key order as generated).
-- **XLIFF `trans-unit` ids**: within each `<body>` the `<trans-unit>`
-  elements are sorted by `id` (case-insensitive). Tooling:
+- **XLIFF `trans-unit` and `group` ids**: within each `<body>` the
+  `<trans-unit>` and `<group>` elements are sorted by their `id`
+  attribute (case-insensitive); the `<trans-unit>` elements inside a
+  `<group>` are sorted the same way (groups may be nested). Tooling:
   `composer lint:xlf` / `composer fix:xlf`; the check is part of
   `lint:all`.
 
