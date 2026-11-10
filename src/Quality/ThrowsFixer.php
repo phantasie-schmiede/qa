@@ -37,6 +37,7 @@ use function preg_match;
 use function preg_replace;
 use function proc_close;
 use function proc_open;
+use function rename;
 use function reset;
 use function rmdir;
 use function sprintf;
@@ -443,7 +444,20 @@ final class ThrowsFixer
             throw new RuntimeException('could not write the temporary phpstan configuration');
         }
 
-        return $file;
+        /*
+         * PHPStan picks the config loader by file extension (Nette DI
+         * rejects files without a known one), and tempnam() names the file
+         * without an extension, so it is renamed to .neon.
+         */
+        $neon = $file . '.neon';
+
+        if (false === rename($file, $neon)) {
+            unlink($file);
+
+            throw new RuntimeException('could not rename the temporary phpstan configuration');
+        }
+
+        return $neon;
     }
 
     /**
