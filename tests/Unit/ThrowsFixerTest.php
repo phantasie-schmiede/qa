@@ -37,6 +37,24 @@ final class ThrowsFixerTest extends TestCase
     }
 
     /**
+     * @param list<string> $configurations
+     * @throws ExpectationFailedException
+     */
+    private static function assertTempConfigurationCarriesTheNeonExtension(array $configurations): void
+    {
+        /*
+         * PHPStan picks the config loader by file extension; the
+         * extensionless name tempnam() produces is rejected with
+         * "Unknown file extension".
+         */
+        self::assertGreaterThan(0, count($configurations));
+
+        foreach ($configurations as $configuration) {
+            self::assertSame(true, str_ends_with($configuration, '.neon'));
+        }
+    }
+
+    /**
      * @throws ExpectationFailedException
      */
     public function testCollectEntriesKeepsOnlyRuleMessages(): void
@@ -173,6 +191,8 @@ final class ThrowsFixerTest extends TestCase
             ['update', '--with', 'typo3/cms-core:^14.3', '-W'],
         ], $this->composerCalls($root));
 
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
+
         /*
          * The core major switch wiped the vendor dir (the fake
          * composer recreates installed.json only).
@@ -236,6 +256,8 @@ final class ThrowsFixerTest extends TestCase
             ['update', '--with', 'typo3/cms-core:^14.3', '-W'],
             ['update', '--with', 'typo3/cms-core:14.3.10', '-W'],
         ], $this->composerCalls($root));
+
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
 
         /*
          * The core major switch wiped the vendor dir (the fake
@@ -324,6 +346,8 @@ final class ThrowsFixerTest extends TestCase
                 }
             }
             php, file_get_contents($root . '/src/Service.php'));
+
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
 
         /*
          * No core switch, no vendor wipe.
@@ -423,6 +447,34 @@ final class ThrowsFixerTest extends TestCase
         chmod($root . '/.state/bin/composer', 0755);
 
         return $root;
+    }
+
+    /**
+     * The --configuration values the fixer passed to phpstan, in call
+     * order.
+     *
+     * @return list<string>
+     * @throws ValueError
+     */
+    private function phpstanConfigurations(string $root): array
+    {
+        $configurations = [];
+
+        if (!is_file($root . '/.state/phpstan.log')) {
+            return $configurations;
+        }
+
+        foreach (file($root . '/.state/phpstan.log', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            $arguments = (array) json_decode($line, true);
+
+            foreach ($arguments as $argument) {
+                if (is_string($argument) && str_starts_with($argument, '--configuration=')) {
+                    $configurations[] = substr($argument, strlen('--configuration='));
+                }
+            }
+        }
+
+        return $configurations;
     }
 
     /**
