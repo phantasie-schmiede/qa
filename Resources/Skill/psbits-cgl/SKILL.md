@@ -73,9 +73,12 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
   case-insensitively.
 - **Array keys**: in every array literal whose keys are string
   literals, the keys are sorted case-insensitively. Tooling:
-  `PSBits/alphabetical_array_keys` (php-cs-fixer). Arrays with dynamic
-  keys or side-effect-carrying values are left alone by the tooling -
-  do not reorder them by hand either. Two per-array exceptions are
+   `PSBits/alphabetical_array_keys` (php-cs-fixer, risky because insertion
+   order is observable). Arrays with dynamic keys or side-effect-carrying
+   values (including property reads and calls inside nested arrays) are
+   left alone by the tooling - do not reorder them by hand either.
+   Escaped and integer-like string keys are conservatively skipped, as
+   are duplicate keys. Two per-array exceptions are
   declared with a directive in a comment between the opening bracket
   and the first item (the directive applies to the marked array only,
   nested arrays keep the default):
@@ -90,7 +93,10 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
     evaluable literal (numbers, strings, true, false, null, nested
     literal arrays). The order is the natural value order (null,
     false, true, numbers, strings, arrays; strings
-    case-insensitive); equal values fall back to the key order.
+     case-insensitive); equal values fall back to the key order.
+     Escaped strings and numeric spellings other than plain decimal
+     literals (e.g. hexadecimal, octal or digit separators) are skipped
+     rather than evaluated by casting their source text.
 - **JSON keys**: same order as array keys (JSON that lives in PHP files
   is an array; in standalone `.json` files apply the rule when writing)
   - with two tool-managed exceptions: `composer.json` follows the

@@ -3,12 +3,41 @@
 declare(strict_types=1);
 
 use PhpCsFixer\Tokenizer\Tokens;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpCsFixer\Fixer\AlphabeticalArrayKeysFixer;
 
 final class AlphabeticalArrayKeysFixerTest extends TestCase
 {
+    /** @return array<string, array{string}> */
+    public static function unsafeArrays(): array
+    {
+        return [
+            'duplicate key'                           => ['["z" => 1, "a" => 2, "z" => 3]'],
+            'escaped duplicate key'                   => ['["b" => 1, "\\x62" => 2, "a" => 3]'],
+            'nested dynamic key'                      => ['["z" => [key() => 1], "a" => 1]'],
+            'nested keyed calls'                      => ['["z" => ["x" => first()], "a" => ["x" => second()]]'],
+            'nested list calls'                       => ['["z" => [first()], "a" => [second()]]'],
+            'nested property reads'                   => ['["z" => ["x" => $o->first], "a" => 1]'],
+            'nested spread'                           => ['["z" => [...$items], "a" => 1]'],
+            'nullsafe property reads'                 => ['["z" => $o?->first, "a" => 1]'],
+            'numeric string key'                      => ['["2" => 1, "10" => 2, "a" => 3]'],
+            'property chain'                          => ['["z" => $this->first->value, "a" => 1]'],
+            'property reads'                          => ['["z" => $o->first, "a" => $o->second]'],
+            'single quoted escape'                    => ["['z' => 1, 'a\\\\b' => 2]"],
+            'values duplicate integer and string key' => ['[/* PSBits/alphabetical_array_keys=values */ 1 => 2, "1" => 1]'],
+            'values escaped string'                   => ['[/* PSBits/alphabetical_array_keys=values */ "z" => "b", "a" => "\\x61"]'],
+            'values hexadecimal key'                  => ['[/* PSBits/alphabetical_array_keys=values */ 0x10 => 2, 16 => 1]'],
+            'values hexadecimal value'                => ['[/* PSBits/alphabetical_array_keys=values */ "z" => 2, "a" => 0x10]'],
+            'values octal key'                        => ['[/* PSBits/alphabetical_array_keys=values */ 010 => 2, 8 => 1]'],
+            'values octal value'                      => ['[/* PSBits/alphabetical_array_keys=values */ "z" => 010, "a" => 9]'],
+            'values separated float'                  => ['[/* PSBits/alphabetical_array_keys=values */ "z" => 1_000.5, "a" => 2]'],
+            'values separated integer'                => ['[/* PSBits/alphabetical_array_keys=values */ "z" => 1_000, "a" => 2]'],
+            'values signed expression'                => ['[/* PSBits/alphabetical_array_keys=values */ "z" => 2, "a" => -1 + call()]'],
+        ];
+    }
+
     /**
      * @throws ExpectationFailedException
      */
@@ -60,6 +89,25 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
             php;
 
         self::assertSame($code, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testIsRiskyBecauseArrayOrderIsObservable(): void
+    {
+        self::assertTrue((new AlphabeticalArrayKeysFixer())->isRisky());
+    }
+
+    /** @throws ExpectationFailedException */
+    #[DataProvider('unsafeArrays')]
+    public function testLeavesUnsafeArraysUntouched(string $array): void
+    {
+        $code  = '<?php $a = ' . $array . ';';
+        $fixer = new AlphabeticalArrayKeysFixer();
+
+        self::assertSame($code, $this->fix($fixer, $code));
+        self::assertSame($code, $this->fix($fixer, $this->fix($fixer, $code)));
     }
 
     /**
@@ -144,6 +192,19 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
+    public function testSortsArraysWithSingleItemAndEmptyNestedArrays(): void
+    {
+        $code     = '<?php $a = ["z" => ["x" => 1], "a" => []];';
+        $expected = '<?php $a = ["a" => [], "z" => ["x" => 1]];';
+        $fixer    = new AlphabeticalArrayKeysFixer();
+
+        self::assertSame($expected, $this->fix($fixer, $code));
+        self::assertSame($expected, $this->fix($fixer, $expected));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSortsMultilineArrays(): void
     {
         $code = <<<'php'
@@ -187,6 +248,17 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
                 'z' => ['c' => 3, 'd' => 4],
             ];
             php, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testSortsPlainVariableReads(): void
+    {
+        self::assertSame(
+            '<?php $a = ["a" => $second, "z" => $first];',
+            $this->fix(new AlphabeticalArrayKeysFixer(), '<?php $a = ["z" => $first, "a" => $second];'),
+        );
     }
 
     /**
@@ -420,6 +492,17 @@ final class AlphabeticalArrayKeysFixerTest extends TestCase
                 'a' => ['x' => 2, 'y' => 1],
             ];
             php, $this->fix(new AlphabeticalArrayKeysFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testValuesDirectiveSortsSignedDecimalAndFloatLiterals(): void
+    {
+        self::assertSame(
+            '<?php $a = [/* PSBits/alphabetical_array_keys=values */ "a" => -2, "z" => +1.5];',
+            $this->fix(new AlphabeticalArrayKeysFixer(), '<?php $a = [/* PSBits/alphabetical_array_keys=values */ "z" => +1.5, "a" => -2];'),
+        );
     }
 
     /**
