@@ -98,8 +98,14 @@ scripts remain untouched; obsolete entries are not removed. The
   standard order of `fix:all` is `fix:classes`, `fix:composer`, `fix:htmlxml`,
   `fix:json`, `fix:throws`, `fix:xlf`, `fix:php` (the php-cs-fixer run last,
   normalizing what the other fixers wrote); `lint:all` is alphabetical.
+  Additional repository `fix:*` scripts run alphabetically before the final
+  `fix:php`, after the other shared fixers.
 - `bin/qa check` enforces the same in the CI (missing scripts, missing
   aggregates and aggregate deviations all fail the gate).
+  Duplicate members fail for all aggregates; execution order is enforced for
+  `fix:all` and `qa` (fixes, lints, then tests). `lint:all` and `test:all`
+  are membership-checked without enforcing order. Individual script commands
+  remain customizable: check verifies presence, not their command text.
 
 ## The qa package itself (self-lint)
 

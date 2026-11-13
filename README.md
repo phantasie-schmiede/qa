@@ -107,6 +107,14 @@ scripts and aggregates. Existing custom scripts and aggregates are preserved;
 aggregate deviations are reported by sync and fail check. Obsolete entries are
 not removed automatically.
 
+`qa check` rejects duplicate aggregate members. It also enforces the execution
+order of `fix:all` and `qa`: custom `fix:*` scripts run alphabetically after
+the shared fixers but before the final `fix:php`; `qa` runs fixes, then lints,
+then tests (when present). Existing aggregates are not rewritten by sync.
+For `lint:all` and `test:all`, membership and duplicates are checked, not order.
+Individual script commands may be customized; check verifies their presence,
+not that their command text matches the package default.
+
 - `composer test:local` needs PHP >= 8.3, Composer, the PHP extensions required
   by the repository and test tools, and (for functional tests) the selected PDO
   driver. SQLite is the default; Debian/Ubuntu typically supplies `pdo_sqlite`

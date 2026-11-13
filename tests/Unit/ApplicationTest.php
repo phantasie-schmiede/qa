@@ -78,6 +78,18 @@ final class ApplicationTest extends TestCase
         ];
     }
 
+    /** @return array<string, array{string, list<string>, string}> */
+    public static function invalidAggregates(): array
+    {
+        return [
+            'duplicate fix'  => ['fix:all', ['@fix:composer', '@fix:throws', '@fix:php', '@fix:php'], 'duplicates: @fix:php'],
+            'duplicate lint' => ['lint:all', ['@analyze:php', '@audit:composer', '@lint:composer', '@lint:php', '@validate:composer', '@lint:php'], 'duplicates: @lint:php'],
+            'duplicate qa'   => ['qa', ['@fix:all', '@lint:all', '@lint:all'], 'duplicates: @lint:all'],
+            'fix order'      => ['fix:all', ['@fix:php', '@fix:throws', '@fix:composer'], 'order differs'],
+            'qa order'       => ['qa', ['@lint:all', '@fix:all'], 'order differs'],
+        ];
+    }
+
     /** @return array<string, array{list<string>}> */
     public static function suites(): array
     {
@@ -102,6 +114,32 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('FAIL: lint:all deviates from the expected standard', $output);
         self::assertStringContainsString('missing: @lint:xlf', $output);
         self::assertStringContainsString('"lint:all": [', $output);
+    }
+
+    /**
+     * @param list<string> $members
+     * @throws ExpectationFailedException
+     */
+    #[DataProvider('invalidAggregates')]
+    public function testCheckFailsOnInvalidAggregateWithoutSyncRewritingIt(string $aggregate, array $members, string $reason): void
+    {
+        $this->writeCsFixerShim();
+        $this->writeRepositoryFixtures([], false);
+        chdir($this->root);
+        $this->sync();
+        $scripts             = $this->composerScripts();
+        $scripts[$aggregate] = $members;
+        $this->writeRepositoryFixtures($scripts, false);
+        $before = file_get_contents($this->root . '/composer.json');
+
+        $output = $this->sync();
+        self::assertStringContainsString('hint: ' . $aggregate . ' deviates', $output);
+        self::assertStringContainsString($reason, $output);
+        self::assertSame($before, file_get_contents($this->root . '/composer.json'));
+        [$exit, $output] = $this->check();
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: ' . $aggregate . ' deviates', $output);
+        self::assertStringContainsString($reason, $output);
     }
 
     /**
@@ -191,6 +229,28 @@ final class ApplicationTest extends TestCase
         Application::execute(['qa', 'sync']);
         file_put_contents($this->root . '/.git/hooks/pre-commit', "echo tampered\n");
         self::assertSame(1, Application::execute(['qa', 'check']));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testCheckIgnoresLintAndTestOrderButRejectsDuplicateTests(): void
+    {
+        mkdir($this->root . '/Tests/Unit', 0755, true);
+        file_put_contents($this->root . '/Tests/Unit/ExampleTest.php', '<?php');
+        chdir($this->root);
+        $this->sync();
+        $scripts             = $this->composerScripts();
+        $scripts['lint:all'] = array_reverse($scripts['lint:all']);
+        $scripts['test:all'] = array_reverse($scripts['test:all']);
+        file_put_contents($this->root . '/composer.json', json_encode(['scripts' => $scripts]));
+        self::assertSame(0, $this->check()[0]);
+
+        $scripts['test:all'][] = '@test:unit';
+        file_put_contents($this->root . '/composer.json', json_encode(['scripts' => $scripts]));
+        [$exit, $output] = $this->check();
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('duplicates: @test:unit', $output);
     }
 
     /**
@@ -440,6 +500,24 @@ final class ApplicationTest extends TestCase
         $scripts = $this->composerScripts();
         self::assertSame(['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncCustomFixersRunBeforeFinalPhpFormatter(): void
+    {
+        $this->writeCsFixerShim();
+        $this->writeRepositoryFixtures(['fix:alpha' => 'custom a', 'fix:zeta' => 'custom z'], false);
+        chdir($this->root);
+        $this->sync();
+        self::assertSame(['@fix:composer', '@fix:throws', '@fix:alpha', '@fix:zeta', '@fix:php'], $this->composerScripts()['fix:all']);
+        self::assertSame(0, $this->check()[0]);
+        $scripts            = $this->composerScripts();
+        $scripts['fix:all'] = ['@fix:composer', '@fix:throws', '@fix:php', '@fix:alpha', '@fix:zeta'];
+        $this->writeRepositoryFixtures($scripts, false);
+        self::assertSame(1, $this->check()[0]);
+        self::assertSame($scripts['fix:all'], $this->composerScripts()['fix:all']);
     }
 
     /**

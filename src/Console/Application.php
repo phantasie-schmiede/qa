@@ -20,6 +20,7 @@ use function array_key_exists;
 use function array_keys;
 use function array_merge;
 use function array_slice;
+use function array_unique;
 use function array_values;
 use function chmod;
 use function count;
@@ -204,13 +205,22 @@ final class Application
     /**
      * @param list<string> $actual
      * @param list<string> $standard
-     * @return array{missing: list<string>, extra: list<string>}
+     * @return array{missing: list<string>, extra: list<string>, duplicates: list<string>, order: bool}
      */
-    private static function aggregateDeviations(array $actual, array $standard): array
+    private static function aggregateDeviations(array $actual, array $standard, bool $checkOrder): array
     {
+        $counts     = array_count_values($actual);
+        $duplicates = array_keys(array_filter($counts, static fn(int $count): bool => 1 < $count));
+        $unique     = array_values(array_unique($actual));
+
         return [
-            'missing' => array_values(array_diff($standard, $actual)),
-            'extra'   => array_values(array_diff($actual, $standard)),
+            'missing'    => array_values(array_diff($standard, $actual)),
+            'extra'      => array_values(array_diff($actual, $standard)),
+            'duplicates' => $duplicates,
+            'order'      => $checkOrder
+                && [] === array_diff($standard, $actual)
+                && [] === array_diff($actual, $standard)
+                && $unique !== $standard,
         ];
     }
 
@@ -244,7 +254,7 @@ final class Application
         }
 
         foreach (self::FIX_ALL_ORDER as $name) {
-            if (isset($scripts[$name])) {
+            if ('fix:php' !== $name && isset($scripts[$name])) {
                 $fixAll[] = '@' . $name;
             }
         }
@@ -252,7 +262,13 @@ final class Application
         sort($lintAll);
         sort($rest);
 
-        $standards = ['lint:all' => $lintAll, 'fix:all' => array_merge($fixAll, $rest)];
+        $fixAll = array_merge($fixAll, $rest);
+
+        if (isset($scripts['fix:php'])) {
+            $fixAll[] = '@fix:php';
+        }
+
+        $standards = ['fix:all' => $fixAll, 'lint:all' => $lintAll];
         $testAll   = [];
 
         foreach (['Functional' => 'test:functional', 'Unit' => 'test:unit'] as $suite => $script) {
@@ -520,8 +536,8 @@ final class Application
      * formatting (plus the missing and extra members), so a deviation can
      * be aligned manually.
      *
-     * @param array{missing: list<string>, extra: list<string>} $deviation
-     * @param list<string>                                      $standard
+     * @param array{missing: list<string>, extra: list<string>, duplicates: list<string>, order: bool} $deviation
+     * @param list<string>                                                                             $standard
      */
     private static function printAggregateStandard(string $aggregate, array $deviation, array $standard): void
     {
@@ -531,6 +547,14 @@ final class Application
 
         if ([] !== $deviation['extra']) {
             echo '  extra: ' . implode(', ', $deviation['extra']) . "\n";
+        }
+
+        if ([] !== $deviation['duplicates']) {
+            echo '  duplicates: ' . implode(', ', $deviation['duplicates']) . "\n";
+        }
+
+        if ($deviation['order']) {
+            echo "  order differs from the expected standard\n";
         }
 
         $members = [];
@@ -858,9 +882,9 @@ final class Application
         }
 
         foreach ($standards as $aggregate => $members) {
-            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $members);
+            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $members, in_array($aggregate, ['fix:all', 'qa'], true));
 
-            if ([] === $deviation['missing'] && [] === $deviation['extra']) {
+            if ([] === $deviation['missing'] && [] === $deviation['extra'] && [] === $deviation['duplicates'] && !$deviation['order']) {
                 echo "aggregate {$aggregate} unchanged\n";
 
                 continue;
@@ -908,9 +932,9 @@ final class Application
                 continue;
             }
 
-            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $members);
+            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $members, in_array($aggregate, ['fix:all', 'qa'], true));
 
-            if ([] === $deviation['missing'] && [] === $deviation['extra']) {
+            if ([] === $deviation['missing'] && [] === $deviation['extra'] && [] === $deviation['duplicates'] && !$deviation['order']) {
                 echo "ok: {$aggregate}\n";
             } else {
                 echo "FAIL: {$aggregate} deviates from the expected standard\n";
