@@ -53,6 +53,8 @@ repository are added:
 
 - `analyze:php` (PHPStan, needs `Build/Quality/phpstan.neon.dist`)
 - `audit:composer`, `validate:composer` (always)
+- `docker:images` (only when `test:docker` already exists; prepares the
+  extension's test images using `buildTestImages.sh`)
 - `lint:composer` / `fix:composer` (always; the `ergebnis/composer-normalize`
   plugin normalizes the `composer.json` key order and formatting)
 - `lint:php` / `fix:php` (PHP-CS-Fixer, needs
@@ -121,6 +123,14 @@ directly:
 - `runLocalTests.sh` - local PHP with docker databases, `runDockerTests.sh` - everything in
   containers, `buildTestImages.sh` - builds the test images
   (`psbits/<extension>-test:<php>`)
+- Preparation is checked before dependency changes or container starts. Local
+  tests require PHP >= 8.3, Composer, required PHP extensions and (only for
+  functional suites) the selected PDO driver. SQLite is the default; inspect
+  it with `php --ri pdo_sqlite`. MySQL/PostgreSQL connections are checked without
+  creating databases; PostgreSQL users also need CREATEDB permission.
+- Before Docker tests, run `composer docker:images`. The runner checks Docker,
+  Compose, daemon access and the selected image (`PHP_VERSION`, default 8.4),
+  and aborts with preparation instructions if a prerequisite is missing.
 - The matrix environment is written to `composer-matrix.json` (locked in
   `composer-matrix.lock`; both gitignored); `.Build/` holds the resolved core.
 - Always verify on **both** supported majors (v13.4 and v14.3) before declaring a change

@@ -75,6 +75,34 @@ or the current working directory (composer and CI both run from the repo
 root); the Docker image name derives from `PSBITS_QA_EXTENSION` (default:
 the repository directory name).
 
+### Preparing local and Docker tests
+
+`qa sync` adds `docker:images` when the repository already defines `test:docker`;
+`qa check` verifies its presence. Existing custom scripts are preserved. The
+selection of test suites and `test:all` remains repository-managed.
+
+- `composer test:local` needs PHP >= 8.3, Composer, the PHP extensions required
+  by the repository and test tools, and (for functional tests) the selected PDO
+  driver. SQLite is the default; Debian/Ubuntu typically supplies `pdo_sqlite`
+  through `php<major.minor>-sqlite3`. Check the CLI configuration with `php --ini`
+  and `php --ri pdo_sqlite`. Unit-only repositories do not need a database.
+- MySQL/PostgreSQL legs need an accessible server and credentials configured via
+  `typo3DatabaseHost`, `typo3DatabasePort`, `typo3DatabaseUsername` and
+  `typo3DatabasePassword`. Users must be allowed to create and drop test databases.
+  Preparation checks connect without creating a database; PostgreSQL's CREATEDB
+  permission is also checked. MySQL's effective per-database permissions remain
+  the test framework's responsibility.
+- Before `composer test:docker`, run `composer docker:images`. Docker and Compose
+  must be available, the daemon reachable, and the selected test image present.
+  `PHP_VERSION` selects the image tag (default: 8.4). Rebuild after Dockerfile or
+  additional CA certificate changes.
+
+The runners abort on missing prerequisites before resolving dependencies or
+starting containers. Single-leg runs are checked too. The local matrix checks
+preparation before its first leg rather than reporting the same setup failure
+four times. Dependency resolution still needs repository/network access;
+preparation checks cannot guarantee successful downloads or successful tests.
+
 ## Linting the package itself
 
 The package is linted with the tooling it ships: the root

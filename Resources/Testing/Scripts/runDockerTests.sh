@@ -35,9 +35,15 @@ cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/preflight.sh"
 
 export ROOT_DIR="$REPO_ROOT"
 export PSBITS_QA_EXTENSION="${PSBITS_QA_EXTENSION:-$(basename "$REPO_ROOT")}"
+
+# Check before installing the cleanup trap: a failed preparation must not even
+# tear down containers belonging to an earlier run.
+docker_preflight
 
 compose() {
     docker compose -f "$SCRIPT_DIR/../Docker/docker-compose.yml" "$@"

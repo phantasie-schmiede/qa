@@ -62,20 +62,22 @@ final class Application
     private const array LINT_ALL_MEMBERS = ['@analyze:php', '@audit:composer', '@validate:composer'];
 
     /**
-     * The shared QA scripts that link adds to the caller composer.json when
+     * The shared QA scripts that sync adds to the caller composer.json when
      * missing. The condition decides whether the script applies to a
      * repository at all: "always" does, "xlf" requires *.xlf files below the
      * root, "phpstan" a PHPStan configuration in Build/Quality, "csfixer" a
      * PHP-CS-Fixer configuration in Build/Quality, "configuration" the
      * Configuration directory, "typoscript" at least one .typoscript file
      * below Configuration/TypoScript, and "npm:<script>" the npm script in
-     * the caller package.json (the composer script is its proxy).
+     * the caller package.json (the composer script is its proxy), and
+     * "composer:<script>" requires that script in the caller composer.json.
      *
-     * @var list<array{name: string, command: string, condition: string}>
+     * @var list<array{name: string, command: list<string>|string, condition: string}>
      */
     private const array SCRIPTS = [
         ['command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan', 'name' => 'analyze:php'],
         ['command' => 'composer audit --abandoned=report', 'condition' => 'always', 'name' => 'audit:composer'],
+        ['command' => ['Composer\\Config::disableProcessTimeout', 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/buildTestImages.sh'], 'condition' => 'composer:test:docker', 'name' => 'docker:images'],
         ['command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes', 'name' => 'fix:classes'],
         ['command' => 'composer normalize', 'condition' => 'always', 'name' => 'fix:composer'],
         ['command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml', 'name' => 'fix:htmlxml'],
@@ -493,13 +495,19 @@ final class Application
     }
 
     /**
-     * @param array{name: string, command: string, condition: string} $script
+     * @param array{name: string, command: list<string>|string, condition: string} $script
      * @throws RuntimeException
      * @throws UnexpectedValueException
      */
     private static function scriptApplicable(array $script, string $root): bool
     {
         $condition = $script['condition'];
+
+        if (str_starts_with($condition, 'composer:')) {
+            $data = json_decode((string) file_get_contents($root . '/composer.json'), true);
+
+            return is_array($data) && isset($data['scripts'][substr($condition, strlen('composer:'))]);
+        }
 
         if (str_starts_with($condition, 'npm:')) {
             return self::npmScriptDefined($root, substr($condition, strlen('npm:')));

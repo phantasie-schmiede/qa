@@ -169,7 +169,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testCheckPassesAfterLink(): void
+    public function testCheckPassesAfterSync(): void
     {
         chdir($this->root);
         self::assertSame(0, Application::execute(['qa', 'sync']));
@@ -179,7 +179,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testCheckPassesAfterLinkAndAlignedAggregates(): void
+    public function testCheckPassesAfterSyncAndAlignedAggregates(): void
     {
         $this->writeRepositoryFixtures();
         chdir($this->root);
@@ -198,7 +198,7 @@ final class ApplicationTest extends TestCase
      * @throws Exception
      * @throws ExpectationFailedException
      */
-    public function testLinkAddsCompleteToolchainToCompleteRepository(): void
+    public function testSyncAddsCompleteToolchainToCompleteRepository(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
         $this->writeNpmScripts(['fix:classes', 'fix:htmlxml', 'fix:json', 'lint:classes', 'lint:htmlxml', 'lint:json']);
@@ -206,7 +206,7 @@ final class ApplicationTest extends TestCase
         $this->writeCsFixerShim();
         chdir($this->root);
 
-        $this->link();
+        $this->sync();
 
         $scripts = $this->composerScripts();
 
@@ -243,12 +243,40 @@ final class ApplicationTest extends TestCase
      * @throws Exception
      * @throws ExpectationFailedException
      */
-    public function testLinkAddsOnlyAlwaysScriptsToBareRepository(): void
+    public function testSyncAddsDockerImagesOnlyWhenDockerTestsExist(): void
+    {
+        chdir($this->root);
+        $this->sync();
+        self::assertArrayNotHasKey('docker:images', $this->composerScripts());
+
+        $scripts                = $this->composerScripts();
+        $scripts['test:docker'] = 'custom docker runner';
+        $this->writeRepositoryFixtures($scripts, false, false);
+        [$exit, $output] = $this->check();
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: script docker:images missing', $output);
+
+        $this->sync();
+        self::assertSame([
+            'Composer\\Config::disableProcessTimeout',
+            'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/buildTestImages.sh',
+        ], $this->composerScripts()['docker:images']);
+        $before = file_get_contents($this->root . '/composer.json');
+        $this->sync();
+        self::assertSame($before, file_get_contents($this->root . '/composer.json'));
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
+    public function testSyncAddsOnlyAlwaysScriptsToBareRepository(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
         chdir($this->root);
 
-        $this->link();
+        $this->sync();
 
         $scripts = $this->composerScripts();
         self::assertSame('composer audit --abandoned=report', $scripts['audit:composer']);
@@ -273,12 +301,12 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkAddsSharedScriptsWithoutTouchingExistingAggregates(): void
+    public function testSyncAddsSharedScriptsWithoutTouchingExistingAggregates(): void
     {
         $this->writeRepositoryFixtures();
         chdir($this->root);
 
-        $output = $this->link();
+        $output = $this->sync();
 
         $scripts = $this->composerScripts();
         self::assertSame('.Build/bin/qa xlf-check', $scripts['lint:xlf']);
@@ -294,13 +322,13 @@ final class ApplicationTest extends TestCase
      * @throws Exception
      * @throws ExpectationFailedException
      */
-    public function testLinkAppliesNpmScriptConditionsPerPackageJson(): void
+    public function testSyncAppliesNpmScriptConditionsPerPackageJson(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, withXlf: false, withPhpstan: false);
         $this->writeNpmScripts(['fix:json', 'lint:js', 'lint:json', 'lint:scss']);
         chdir($this->root);
 
-        $this->link();
+        $this->sync();
 
         $scripts = $this->composerScripts();
         self::assertSame('npm run lint:js', $scripts['lint:js']);
@@ -319,7 +347,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkCreatesMissingAggregatesWithTheStandard(): void
+    public function testSyncCreatesMissingAggregatesWithTheStandard(): void
     {
         $scripts = self::BASE_SCRIPTS;
         unset($scripts['fix:all'], $scripts['qa']);
@@ -336,7 +364,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkInstallsHookAndSkillLinks(): void
+    public function testSyncInstallsHookAndSkillLinks(): void
     {
         chdir($this->root);
         self::assertSame(0, Application::execute(['qa', 'sync']));
@@ -357,7 +385,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkInstallsMissingCallerWorkflow(): void
+    public function testSyncInstallsMissingCallerWorkflow(): void
     {
         chdir($this->root);
         self::assertSame(0, Application::execute(['qa', 'sync']));
@@ -368,7 +396,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkIsIdempotent(): void
+    public function testSyncIsIdempotent(): void
     {
         $this->writeRepositoryFixtures();
         chdir($this->root);
@@ -385,7 +413,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkKeepsCustomScriptEntriesAndReportsTheirDeviation(): void
+    public function testSyncKeepsCustomScriptEntriesAndReportsTheirDeviation(): void
     {
         $scripts             = self::BASE_SCRIPTS;
         $scripts['lint:all'] = [
@@ -398,7 +426,7 @@ final class ApplicationTest extends TestCase
         $this->writeRepositoryFixtures($scripts);
         chdir($this->root);
 
-        $output = $this->link();
+        $output = $this->sync();
 
         $scripts = $this->composerScripts();
         self::assertSame(
@@ -421,10 +449,24 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncPreservesCustomDockerImagesScript(): void
+    {
+        $scripts                  = self::MINIMAL_SCRIPTS;
+        $scripts['test:docker']   = 'custom runner';
+        $scripts['docker:images'] = 'custom builder';
+        $this->writeRepositoryFixtures($scripts, false, false);
+        chdir($this->root);
+        $this->sync();
+        self::assertSame('custom builder', $this->composerScripts()['docker:images']);
+    }
+
+    /**
      * @throws Exception
      * @throws ExpectationFailedException
      */
-    public function testLinkSkipsSharedScriptsOfUnapplicableRepositories(): void
+    public function testSyncSkipsSharedScriptsOfUnapplicableRepositories(): void
     {
         $this->writeRepositoryFixtures(self::BASE_SCRIPTS, withXlf: false);
         chdir($this->root);
@@ -441,13 +483,13 @@ final class ApplicationTest extends TestCase
      * @throws Exception
      * @throws ExpectationFailedException
      */
-    public function testLinkSkipsTyposcriptScriptForEmptyTyposcriptDirectory(): void
+    public function testSyncSkipsTyposcriptScriptForEmptyTyposcriptDirectory(): void
     {
         $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS);
         mkdir($this->root . '/Configuration/TypoScript', 0755, true);
         chdir($this->root);
 
-        $this->link();
+        $this->sync();
 
         $scripts = $this->composerScripts();
         self::assertArrayNotHasKey('lint:typoscript', $scripts);
@@ -457,7 +499,7 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
-    public function testLinkSyncsCallerWorkflowWhenPresent(): void
+    public function testSyncUpdatesCallerWorkflowWhenPresent(): void
     {
         chdir($this->root);
         $workflow = $this->root . '/.github/workflows/ci.yml';
@@ -490,17 +532,6 @@ final class ApplicationTest extends TestCase
     }
 
     /**
-     * @throws ExpectationFailedException
-     */
-    private function link(): string
-    {
-        ob_start();
-        self::assertSame(0, Application::execute(['qa', 'sync']));
-
-        return (string) ob_get_clean();
-    }
-
-    /**
      * @throws UnexpectedValueException
      */
     private function removeTree(string $path): void
@@ -518,6 +549,17 @@ final class ApplicationTest extends TestCase
             is_link($itemPath) ? unlink($itemPath) : ($item->isDir() ? rmdir($itemPath) : unlink($itemPath));
         }
         rmdir($path);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    private function sync(): string
+    {
+        ob_start();
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+
+        return (string) ob_get_clean();
     }
 
     private function writeConfiguration(): void

@@ -49,6 +49,8 @@ REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 
 # shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/preflight.sh"
 
 CORE_VERSION=''
 LOWEST=''
@@ -100,6 +102,8 @@ if [ ! -f composer.json ]; then
     echo "composer.json not found in $REPO_ROOT; cannot continue." >&2
     exit 1
 fi
+
+local_preflight "$DB"
 
 PHP_FULL="$(php -r 'echo PHP_VERSION;')"
 LOWEST_NOTE=''
@@ -182,6 +186,9 @@ composer update \
 # variables win for all drivers.
 # ---------------------------------------------------------------------------
 case "$DB" in
+    sqlite)
+        export typo3DatabaseDriver=pdo_sqlite
+        ;;
     mysql)
         export typo3DatabaseDriver=pdo_mysql
         export typo3DatabaseHost="${typo3DatabaseHost:-127.0.0.1}"

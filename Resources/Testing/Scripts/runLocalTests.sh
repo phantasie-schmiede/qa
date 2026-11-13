@@ -18,9 +18,12 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 
 # shellcheck source=/dev/null  # console.sh is linted separately (same directory)
 . "$SCRIPT_DIR/console.sh"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/preflight.sh"
 
 LEG_NO=0
 LEG_TOTAL=4
@@ -49,6 +52,9 @@ print_summary() {
 trap print_summary EXIT
 
 if [ $# -eq 0 ]; then
+    banner "Test preparation (local) — checking PHP, Composer and SQLite for functional tests"
+    local_preflight sqlite
+    echo "The matrix resolves dependencies from Composer repositories. For Docker instead: composer docker:images, then composer test:docker."
     PHP_FULL="$(php -r 'echo PHP_VERSION;')"
     banner "Test matrix (local) — PHP ${PHP_FULL} — legs: 13.4, 14.3, 13.4 (lowest), 14.3 (lowest)"
 
