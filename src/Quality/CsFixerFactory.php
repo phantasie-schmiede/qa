@@ -184,6 +184,10 @@ final class CsFixerFactory
                 ],
                 'phpdoc_order'                    => [
                     'order' => [
+                        'todo',
+                        'access',
+                        'extends',
+                        'implements',
                         'param',
                         'return',
                         'see',
@@ -192,9 +196,12 @@ final class CsFixerFactory
                         'var',
                     ],
                 ],
+                'phpdoc_order_by_value'           => [
+                    'annotations' => ['throws'],
+                ],
                 'phpdoc_separation'               => [
                     'groups'                    => [
-                        ['param', 'return', 'see', 'template', 'throws', 'var'],
+                        ['*'],
                     ],
                     'skip_unlisted_annotations' => true,
                 ],
