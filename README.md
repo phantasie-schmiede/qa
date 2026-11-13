@@ -60,6 +60,26 @@ are skipped entirely by the shared workflow. The `TYPO3_API_TOKEN` secret
 is optional: repositories without it skip the TER publish, everything else
 runs unchanged.
 
+### Safe synchronization
+
+`qa sync --dry-run` previews hook, workflow, skill and Composer script changes
+without writing files. Conflicting existing contents abort the entire sync
+before any file is changed. Review them and use `qa sync --force` only when
+you explicitly want to replace them (including existing skill directories).
+Combine both flags to preview a forced takeover.
+
+Files identical to the package templates or carrying the comment
+`This file is managed by \`qa sync\`` are package-managed and updated normally.
+The exact previous PSBits pre-commit hook is also recognized for migration.
+Other files and symlinks are conflicts; skill links are accepted only when
+they already point to the expected package target.
+
+The hook location is resolved by Git, including worktrees and relative or
+absolute `core.hooksPath`. Repositories without their own Git metadata skip
+the hook. `qa check` also verifies hook executability; `qa sync` repairs
+permissions even when the content is already identical. Git must be available
+when Git metadata exists.
+
 The extension keeps only its repo-specific QA files:
 `Build/Quality/phpstan.neon.dist` (thin shim over the package baseline),
 `Build/Quality/coverage-baseline.json` and `Build/Quality/.prettierignore`

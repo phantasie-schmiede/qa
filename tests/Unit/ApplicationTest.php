@@ -8,6 +8,9 @@ use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\Console\Application;
 use Random\RandomException;
+use Symfony\Component\Process\Exception\LogicException;
+use Symfony\Component\Process\Exception\RuntimeException;
+use Symfony\Component\Process\Process;
 
 final class ApplicationTest extends TestCase
 {
@@ -35,7 +38,9 @@ final class ApplicationTest extends TestCase
     private string $root;
 
     /**
+     * @throws LogicException
      * @throws RandomException
+     * @throws RuntimeException
      */
     protected function setUp(): void
     {
@@ -47,6 +52,7 @@ final class ApplicationTest extends TestCase
             file_put_contents($skillDir . '/SKILL.md', "# Skill\n");
         }
         file_put_contents($this->root . '/composer.json', "{}\n");
+        (new Process(['git', 'init', '--quiet', $this->root]))->mustRun();
     }
 
     /**
@@ -56,6 +62,20 @@ final class ApplicationTest extends TestCase
     {
         chdir(sys_get_temp_dir());
         $this->removeTree($this->root);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function conflictingPaths(): array
+    {
+        return [
+            'hook'                      => ['.git/hooks/pre-commit', 'file'],
+            'hook symlink'              => ['.git/hooks/pre-commit', 'symlink'],
+            'missing skill link target' => ['.opencode/skills/psbits-qa', 'broken symlink'],
+            'skill directory'           => ['.opencode/skills/psbits-qa', 'directory'],
+            'skill symlink'             => ['.opencode/skills/psbits-qa', 'symlink'],
+            'workflow'                  => ['.github/workflows/ci.yml', 'file'],
+            'workflow symlink'          => ['.github/workflows/ci.yml', 'symlink'],
+        ];
     }
 
     /** @return array<string, array{list<string>}> */
@@ -155,7 +175,7 @@ final class ApplicationTest extends TestCase
         chdir($this->root);
         $workflow = $this->root . '/.github/workflows/ci.yml';
         mkdir(dirname($workflow), 0755, true);
-        file_put_contents($workflow, "name: CI\n# stale\n");
+        file_put_contents($workflow, "# This file is managed by `qa sync`\nname: CI\n# stale\n");
         self::assertSame(0, Application::execute(['qa', 'sync']));
         self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
         file_put_contents($workflow, "name: CI\n# drifted\n");
@@ -425,6 +445,25 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
+    public function testSyncDryRunDoesNotCreateFiles(): void
+    {
+        chdir($this->root);
+        $composer = file_get_contents($this->root . '/composer.json');
+        ob_start();
+        $exit   = Application::execute(['qa', 'sync', '--dry-run']);
+        $output = (string) ob_get_clean();
+        self::assertSame(0, $exit);
+        self::assertStringContainsString('would sync pre-commit hook', $output);
+        self::assertStringContainsString('would add script', $output);
+        self::assertSame($composer, file_get_contents($this->root . '/composer.json'));
+        self::assertFileDoesNotExist($this->root . '/.git/hooks/pre-commit');
+        self::assertDirectoryDoesNotExist($this->root . '/.github');
+        self::assertDirectoryDoesNotExist($this->root . '/.opencode');
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSyncInstallsHookAndSkillLinks(): void
     {
         chdir($this->root);
@@ -509,6 +548,72 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('@lint:yaml', $output);
     }
 
+    /** @throws ExpectationFailedException */
+    public function testSyncMissingSkillTargetDoesNotWriteFiles(): void
+    {
+        chdir($this->root);
+        unlink($this->root . '/.Build/vendor/psbits/qa/Resources/Skill/psbits-cgl/SKILL.md');
+        self::assertSame(1, Application::execute(['qa', 'sync']));
+        self::assertFileDoesNotExist($this->root . '/.git/hooks/pre-commit');
+        self::assertDirectoryDoesNotExist($this->root . '/.github');
+        self::assertDirectoryDoesNotExist($this->root . '/.opencode');
+        self::assertSame("{}\n", file_get_contents($this->root . '/composer.json'));
+    }
+
+    /** @throws ExpectationFailedException */
+    #[DataProvider('conflictingPaths')]
+    public function testSyncPreservesConflictsBeforeWritingAnything(string $path, string $kind): void
+    {
+        chdir($this->root);
+        $destination = $this->root . '/' . $path;
+
+        if (!is_dir(dirname($destination))) {
+            mkdir(dirname($destination), 0755, true);
+        }
+
+        $sentinel = $this->root . '/keep-me.txt';
+        file_put_contents($sentinel, 'user content');
+
+        if ('directory' === $kind) {
+            mkdir($destination);
+            file_put_contents($destination . '/custom.md', 'user skill');
+            symlink($sentinel, $destination . '/external-link');
+        } elseif ('broken symlink' === $kind) {
+            symlink($this->root . '/missing-target', $destination);
+        } elseif ('symlink' === $kind) {
+            symlink($sentinel, $destination);
+        } else {
+            file_put_contents($destination, 'user content');
+        }
+
+        $composer = file_get_contents($this->root . '/composer.json');
+
+        foreach ([['qa', 'sync'], ['qa', 'sync', '--dry-run']] as $arguments) {
+            ob_start();
+            $exit   = Application::execute($arguments);
+            $output = (string) ob_get_clean();
+            self::assertSame(1, $exit);
+            self::assertStringContainsString('CONFLICT: ' . $destination, $output);
+            self::assertSame($composer, file_get_contents($this->root . '/composer.json'));
+            self::assertSame('user content', file_get_contents($sentinel));
+
+            if ('broken symlink' === $kind) {
+                self::assertSame($this->root . '/missing-target', readlink($destination));
+            } elseif ('directory' === $kind) {
+                self::assertSame('user skill', file_get_contents($destination . '/custom.md'));
+            } else {
+                self::assertSame('user content', file_get_contents($destination));
+            }
+        }
+
+        self::assertFileDoesNotExist($this->root . '/.opencode/skills/psbits-cgl');
+        self::assertSame(0, Application::execute(['qa', 'sync', '--force', '--dry-run']));
+        self::assertSame($composer, file_get_contents($this->root . '/composer.json'));
+        self::assertSame(0, Application::execute(['qa', 'sync', '--force']));
+        self::assertSame('user content', file_get_contents($sentinel));
+        self::assertSame(0, $this->check()[0]);
+    }
+
     /**
      * @throws ExpectationFailedException
      */
@@ -540,6 +645,62 @@ final class ApplicationTest extends TestCase
         [$code, $output] = $this->check();
         self::assertSame(1, $code);
         self::assertStringContainsString('FAIL: test:all deviates', $output);
+    }
+
+    /** @throws ExpectationFailedException */
+    public function testSyncRepairsHookPermissionsAndUpgradesLegacyHook(): void
+    {
+        chdir($this->root);
+        $hook = $this->root . '/.git/hooks/pre-commit';
+        file_put_contents($hook, "#!/usr/bin/env bash\nset -euo pipefail\n\ncomposer lint:all\n");
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+        chmod($hook, 0644);
+        clearstatcache();
+        self::assertSame(1, $this->check()[0]);
+        self::assertSame(0, Application::execute(['qa', 'sync', '--dry-run']));
+        clearstatcache();
+        self::assertFalse(is_executable($hook));
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+        clearstatcache();
+        self::assertTrue(is_executable($hook));
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws LogicException
+     * @throws RuntimeException
+     */
+    public function testSyncResolvesGitFileAndCustomHooksPath(): void
+    {
+        chdir($this->root);
+        $metadata = $this->root . '/git-metadata';
+        rename($this->root . '/.git', $metadata);
+        file_put_contents($this->root . '/.git', 'gitdir: ' . $metadata . "\n");
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+        self::assertFileExists($metadata . '/hooks/pre-commit');
+        self::assertSame(0, $this->check()[0]);
+
+        // Linked worktrees keep hooks in the common Git directory.
+        $worktreeMetadata = $metadata . '/worktrees/fixture';
+        mkdir($worktreeMetadata, 0755, true);
+        copy($metadata . '/HEAD', $worktreeMetadata . '/HEAD');
+        file_put_contents($worktreeMetadata . '/commondir', "../..\n");
+        file_put_contents($worktreeMetadata . '/gitdir', $this->root . "/.git\n");
+        file_put_contents($this->root . '/.git', 'gitdir: ' . $worktreeMetadata . "\n");
+        unlink($metadata . '/hooks/pre-commit');
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+        self::assertFileExists($metadata . '/hooks/pre-commit');
+        self::assertDirectoryDoesNotExist($worktreeMetadata . '/hooks');
+        self::assertSame(0, $this->check()[0]);
+
+        foreach (['custom-hooks', $this->root . '/absolute-hooks'] as $hooksPath) {
+            (new Process(['git', 'config', 'core.hooksPath', $hooksPath], $this->root))->mustRun();
+            self::assertSame(0, Application::execute(['qa', 'sync']));
+            $absolute = str_starts_with($hooksPath, '/') ? $hooksPath : $this->root . '/' . $hooksPath;
+            self::assertFileExists($absolute . '/pre-commit');
+            self::assertSame(0, $this->check()[0]);
+        }
     }
 
     /**
@@ -584,10 +745,20 @@ final class ApplicationTest extends TestCase
         chdir($this->root);
         $workflow = $this->root . '/.github/workflows/ci.yml';
         mkdir(dirname($workflow), 0755, true);
-        file_put_contents($workflow, "name: CI\n# stale\n");
+        file_put_contents($workflow, "# This file is managed by `qa sync`\nname: CI\n# stale\n");
         self::assertSame(0, Application::execute(['qa', 'sync']));
         self::assertFileEquals($workflow, __DIR__ . '/../../Resources/CI/ci.yml');
         self::assertSame(0, Application::execute(['qa', 'check']));
+    }
+
+    /** @throws ExpectationFailedException */
+    public function testSyncWithoutGitMetadataSkipsHook(): void
+    {
+        chdir($this->root);
+        rename($this->root . '/.git', $this->root . '/git-metadata');
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+        self::assertFileDoesNotExist($this->root . '/.git');
+        self::assertSame(0, $this->check()[0]);
     }
 
     /**

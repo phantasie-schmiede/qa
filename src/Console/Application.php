@@ -10,6 +10,8 @@ use PSBits\Qa\Quality\XlfSorter;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use Symfony\Component\Process\Exception\LogicException;
+use Symfony\Component\Process\Process;
 use UnexpectedValueException;
 
 use function array_diff;
@@ -17,6 +19,7 @@ use function array_filter;
 use function array_key_exists;
 use function array_keys;
 use function array_merge;
+use function array_slice;
 use function array_values;
 use function chmod;
 use function count;
@@ -34,12 +37,14 @@ use function ltrim;
 use function mkdir;
 use function rmdir;
 use function sort;
+use function str_contains;
 use function str_ends_with;
 use function str_starts_with;
 use function strcmp;
 use function strlen;
 use function strtolower;
 use function substr;
+use function trim;
 use function unlink;
 
 final class Application
@@ -129,6 +134,10 @@ final class Application
       qa check      Verify hook, skill links and caller CI workflow match
                     the installed package, and verify that the caller
                     composer.json carries the shared QA scripts (CI gate)
+      qa sync --dry-run
+                    Preview changes without writing files; conflicts fail
+      qa sync --force
+                    Explicitly replace conflicting hooks, workflows or skills
       qa paths      Print the locations of the shared QA resources
       qa throws-fix Rewrite the @throws docblocks against all supported
                     core majors (phpstan loop per major, max 25 fix
@@ -155,7 +164,15 @@ final class Application
         try {
             switch ($command) {
                 case 'sync':
-                    return self::sync(self::repoRoot());
+                    $options = array_slice($argv, 2);
+
+                    foreach ($options as $option) {
+                        if (!in_array($option, ['--dry-run', '--force'], true)) {
+                            throw new RuntimeException('unknown sync option: ' . $option);
+                        }
+                    }
+
+                    return self::sync(self::repoRoot(), in_array('--dry-run', $options, true), in_array('--force', $options, true));
                 case 'check':
                     return self::check(self::repoRoot());
                 case 'paths':
@@ -270,16 +287,19 @@ final class Application
     }
 
     /**
+     * @throws LogicException
      * @throws RuntimeException
      */
     private static function check(string $root): int
     {
         $failed = 0;
 
-        $hook   = $root . '/.git/hooks/pre-commit';
+        $hook   = self::hookPath($root);
         $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
 
-        if (self::filesIdentical($hook, $source)) {
+        if (null === $hook) {
+            echo 'ok: no Git metadata (hook skipped)' . "\n";
+        } elseif (!is_link($hook) && self::filesIdentical($hook, $source) && is_executable($hook)) {
             echo 'ok: pre-commit hook' . "\n";
         } else {
             echo 'FAIL: pre-commit hook differs from the installed package' . "\n";
@@ -305,7 +325,7 @@ final class Application
 
         if (!file_exists($workflow)) {
             echo 'ok: caller workflow not present (skipped)' . "\n";
-        } elseif (self::filesIdentical($workflow, self::callerWorkflowTemplate())) {
+        } elseif (!is_link($workflow) && self::filesIdentical($workflow, self::callerWorkflowTemplate())) {
             echo 'ok: caller workflow' . "\n";
         } else {
             echo 'FAIL: caller workflow differs from the installed package (run qa sync and commit)' . "\n";
@@ -391,6 +411,30 @@ final class Application
         }
 
         return false;
+    }
+
+    /**
+     * Git resolves both worktree metadata and core.hooksPath. A source
+     * archive without its own Git metadata must not use a parent repo's hook.
+     *
+     * @throws \Symfony\Component\Process\Exception\RuntimeException
+     * @throws LogicException
+     * @throws RuntimeException
+     */
+    private static function hookPath(string $root): ?string
+    {
+        if (!file_exists($root . '/.git')) {
+            return null;
+        }
+
+        $process = new Process(['git', 'rev-parse', '--path-format=absolute', '--git-path', 'hooks'], $root);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            throw new RuntimeException('could not resolve Git hook path: ' . trim($process->getErrorOutput()));
+        }
+
+        return rtrim(trim($process->getOutput()), '/') . '/pre-commit';
     }
 
     /**
@@ -518,7 +562,7 @@ final class Application
             );
 
             foreach ($iterator as $item) {
-                $item->isDir() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+                $item->isDir() && !$item->isLink() ? rmdir($item->getPathname()) : unlink($item->getPathname());
             }
         }
         is_dir($path) && !is_link($path) ? rmdir($path) : unlink($path);
@@ -622,26 +666,97 @@ final class Application
     }
 
     /**
+     * @throws LogicException
      * @throws RuntimeException
      * @throws UnexpectedValueException
      */
-    private static function sync(string $root): int
+    private static function sync(string $root, bool $dryRun = false, bool $force = false): int
     {
-        $hooks = $root . '/.git/hooks';
+        $hook     = self::hookPath($root);
+        $workflow = self::callerWorkflow($root);
+        $files    = [$workflow => self::callerWorkflowTemplate()];
 
-        self::ensureDirectory($hooks);
+        if (null !== $hook) {
+            $files[$hook] = self::packageRoot() . '/Resources/GitHooks/pre-commit';
+        }
 
-        $hook   = $hooks . '/pre-commit';
-        $source = self::packageRoot() . '/Resources/GitHooks/pre-commit';
+        // Validate all destinations before writing anything, including composer.json.
+        $conflicts = [];
 
-        if (!self::filesIdentical($hook, $source)) {
-            if (false === copy($source, $hook) || !chmod($hook, 0755)) {
-                throw new RuntimeException('could not install pre-commit hook to ' . $hook);
+        if (!is_array(json_decode((string) file_get_contents($root . '/composer.json'), true))) {
+            throw new RuntimeException('could not parse ' . $root . '/composer.json');
+        }
+
+        if (null === $hook) {
+            echo "no Git metadata (hook skipped)\n";
+        }
+
+        foreach ($files as $destination => $source) {
+            if (file_exists($destination) || is_link($destination)) {
+                $managed = !is_link($destination) && is_file($destination)
+                    && (self::filesIdentical($destination, $source)
+                        || ($destination === $hook && "#!/usr/bin/env bash\nset -euo pipefail\n\ncomposer lint:all\n" === file_get_contents($destination))
+                        || str_contains((string) file_get_contents($destination), 'This file is managed by `qa sync`'));
+
+                if (!$managed && !$force) {
+                    $conflicts[] = $destination;
+                }
+            }
+        }
+
+        foreach (self::skillLinks($root) as $skill => $link) {
+            $target = self::skillTarget($skill);
+
+            if (!is_file($root . '/.Build/vendor/psbits/qa/Resources/Skill/' . $skill . '/SKILL.md')) {
+                throw new RuntimeException('skill target does not resolve: ' . $target . ' (run composer install first)');
             }
 
-            echo "installed pre-commit hook\n";
-        } else {
-            echo "pre-commit hook unchanged\n";
+            if ((file_exists($link) || is_link($link)) && !(is_link($link) && readlink($link) === $target) && !$force) {
+                $conflicts[] = $link;
+            }
+        }
+
+        if ([] !== $conflicts) {
+            foreach ($conflicts as $conflict) {
+                echo 'CONFLICT: ' . $conflict . "\n";
+            }
+            echo "No files changed. Review these paths; use qa sync --force only to replace them explicitly.\n";
+
+            return 1;
+        }
+
+        foreach ($files as $destination => $source) {
+            $label      = $destination === $hook ? 'pre-commit hook' : 'caller workflow';
+            $identical  = !is_link($destination) && self::filesIdentical($destination, $source);
+            $executable = $destination !== $hook || is_executable($destination);
+
+            if ($identical && $executable) {
+                echo $label . " unchanged\n";
+
+                continue;
+            }
+
+            echo ($dryRun ? 'would sync ' : 'synced ') . $label . ': ' . $destination . "\n";
+
+            if ($dryRun) {
+                continue;
+            }
+
+            if (!$identical) {
+                if (is_link($destination) || is_dir($destination)) {
+                    self::remove($destination);
+                }
+
+                self::ensureDirectory(dirname($destination));
+
+                if (!copy($source, $destination)) {
+                    throw new RuntimeException('could not sync ' . $destination);
+                }
+            }
+
+            if ($destination === $hook && !chmod($destination, 0755)) {
+                throw new RuntimeException('could not make hook executable: ' . $destination);
+            }
         }
 
         foreach (self::skillLinks($root) as $skill => $link) {
@@ -651,6 +766,12 @@ final class Application
             if ($linkOk) {
                 echo "skill link unchanged: {$skill}\n";
             } else {
+                if ($dryRun) {
+                    echo "would install skill link: {$skill}\n";
+
+                    continue;
+                }
+
                 if (is_link($link)) {
                     unlink($link);
                 } elseif (file_exists($link)) {
@@ -673,30 +794,7 @@ final class Application
             }
         }
 
-        /*
-         * The caller workflow is created on first run and kept in sync with
-         * the template from then on, so every repository opts into the
-         * shared CI with the next composer install.
-         */
-        $workflow = self::callerWorkflow($root);
-        $source   = self::callerWorkflowTemplate();
-        $existed  = file_exists($workflow);
-
-        if (self::filesIdentical($workflow, $source)) {
-            echo 'caller workflow unchanged' . "\n";
-        } else {
-            $workflowDir = dirname($workflow);
-
-            self::ensureDirectory($workflowDir);
-
-            if (false === copy($source, $workflow)) {
-                throw new RuntimeException('could not sync caller workflow to ' . $workflow);
-            }
-
-            echo $existed ? 'synced caller workflow' : 'installed caller workflow' . "\n";
-        }
-
-        self::syncScripts($root);
+        self::syncScripts($root, $dryRun);
 
         return 0;
     }
@@ -712,7 +810,7 @@ final class Application
      * @throws RuntimeException
      * @throws UnexpectedValueException
      */
-    private static function syncScripts(string $root): void
+    private static function syncScripts(string $root, bool $dryRun = false): void
     {
         $file = $root . '/composer.json';
         $data = json_decode((string) file_get_contents($file), true);
@@ -734,7 +832,7 @@ final class Application
             }
 
             $scripts = self::insertSorted($scripts, $script['name'], $script['command']);
-            echo "added script {$script['name']}\n";
+            echo ($dryRun ? 'would add script ' : 'added script ') . $script['name'] . "\n";
             $changed = true;
         }
 
@@ -746,11 +844,11 @@ final class Application
             }
 
             $scripts = self::insertSorted($scripts, $aggregate, $members);
-            echo "created {$aggregate}\n";
+            echo ($dryRun ? 'would create ' : 'created ') . $aggregate . "\n";
             $changed = true;
         }
 
-        if ($changed) {
+        if ($changed && !$dryRun) {
             $data['scripts'] = $scripts;
             $encoded         = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
 

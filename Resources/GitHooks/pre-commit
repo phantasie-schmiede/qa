@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# This file is managed by `qa sync` from psbits/qa.
 set -euo pipefail
 
 composer lint:all

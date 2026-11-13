@@ -5,7 +5,8 @@
     "type": "library",
     "require": {
         "php": "^8.3",
-        "friendsofphp/php-cs-fixer": "^3.95"
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "symfony/process": "^6.4 || ^7.0 || ^8.0"
     },
     "require-dev": {
         "ergebnis/composer-normalize": "^2.56",

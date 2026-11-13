@@ -43,6 +43,14 @@ The QA tooling lives in the `psbits/qa` package (installed into
   (single source of truth for the whole CI - fix it there, not per repo)
 - Run `bin/qa paths` to list the shared resource locations
 - Upgrade the tooling with `composer update psbits/qa`
+- `qa sync --dry-run` previews all changes without writing files. Conflicts
+  abort before any writes; review them before using `qa sync --force` to
+  explicitly replace foreign hooks, workflows or skill directories/links.
+  Both flags can be combined. Identical templates, marked package-managed
+  files and the exact legacy PSBits hook are updated normally.
+- Hook paths are resolved by Git (worktrees and `core.hooksPath` supported).
+  Without repository-local Git metadata the hook is skipped. `qa check`
+  checks executable permissions too; `qa sync` repairs missing permissions.
 
 ## Shared QA scripts (synced by `bin/qa sync`)
 
