@@ -55,9 +55,8 @@ use function sprintf;
  * state), every marker is tolerated and only unmarked missing classes
  * are reported.
  *
- * @see ThrowsDocblockRuleBase
- *
  * @implements MultipleNodeTypesRule<Node>
+ * @see ThrowsDocblockRuleBase
  */
 final class ThrowsThrowableRule implements MultipleNodeTypesRule
 {

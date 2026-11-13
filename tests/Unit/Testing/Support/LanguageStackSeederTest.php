@@ -24,11 +24,11 @@ final class LanguageStackSeederTest extends UnitTestCase
     protected bool $resetSingletonInstances = true;
 
     /**
-     * @throws NoPreviousThrowableException
      * @throws Exception
      * @throws InvalidArgumentException
-     * @throws PHPUnit\Framework\MockObject\Exception
+     * @throws NoPreviousThrowableException
      * @throws NoSuchCacheException
+     * @throws PHPUnit\Framework\MockObject\Exception
      */
     public function testTheCacheManagerSingletonServesThePreSeededService(): void
     {
@@ -40,10 +40,10 @@ final class LanguageStackSeederTest extends UnitTestCase
     }
 
     /**
-     * @throws NoPreviousThrowableException
      * @throws Exception
      * @throws ExpectationFailedException
      * @throws InvalidArgumentException
+     * @throws NoPreviousThrowableException
      * @throws PHPUnit\Framework\MockObject\Exception
      */
     public function testTheLanguageServiceFactorySingletonServesTheLabelledService(): void

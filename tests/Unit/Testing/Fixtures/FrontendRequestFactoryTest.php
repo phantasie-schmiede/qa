@@ -15,9 +15,9 @@ use TYPO3\CMS\Extbase\Mvc\Request;
 final class FrontendRequestFactoryTest extends TestCase
 {
     /**
-     * @throws InvalidArgumentException
      * @throws Exception
      * @throws ExpectationFailedException
+     * @throws InvalidArgumentException
      */
     public function testCreateExtbaseRequestWrapsTheFrontendRequest(): void
     {
@@ -40,9 +40,9 @@ final class FrontendRequestFactoryTest extends TestCase
     }
 
     /**
-     * @throws InvalidArgumentException
      * @throws Exception
      * @throws ExpectationFailedException
+     * @throws InvalidArgumentException
      */
     public function testCreateFrontendRequestBuildsARequestWithTheFrameworkConfiguration(): void
     {
@@ -67,8 +67,8 @@ final class FrontendRequestFactoryTest extends TestCase
     }
 
     /**
-     * @throws InvalidArgumentException
      * @throws ExpectationFailedException
+     * @throws InvalidArgumentException
      */
     public function testTheViewSetupAndAdditionalAttributesAreProvided(): void
     {
