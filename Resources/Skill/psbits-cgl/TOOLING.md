@@ -19,12 +19,15 @@ not in the repository (see the `psbits-qa` skill for the layout).
   `fix:composer` (the composer.json normalization), `fix:htmlxml`,
   `fix:json` (Prettier for the package.json), `fix:throws` (the
   @throws full-matrix loop, which writes short names + the missing
-  `use` statements itself), `fix:xlf`, `fix:php` (the php-cs-fixer run; its
-  `phpdoc_order` and `phpdoc_separation` sort the docblock tags and drop
-  the blank lines between them, its `PSBits/empty_comments` drops the
-  stray blank star lines and the empty docblock shells, and its
-  `PSBits/function_imports` converts any backslash-prefixed global
-  function call into a `use function` import).
+  `use` statements itself), `fix:xlf`, `fix:php` (the php-cs-fixer run;
+  its `phpdoc_order` sorts the docblock tags, its
+  `phpdoc_order_by_value` keeps the `@throws` lines sorted by
+  exception name and the `@method`, `@property`, `@property-read`,
+  `@property-write` and `@mixin` lines sorted by their value, its
+  `phpdoc_separation` drops the blank lines between any tags, its
+  `PSBits/empty_comments` drops the stray blank star lines and the
+  empty docblock shells, and its `PSBits/function_imports` converts any
+  backslash-prefixed global function call into a `use function` import).
 - `composer fix:throws` / `composer lint:xlf` / `composer fix:xlf` - the
   individual commands (`.Build/bin/qa throws-fix|check|fix`).
 - After `fix:all`, always run `lint:all` and the test suites; a green
@@ -63,9 +66,10 @@ name gets a descriptive alias (last non-generic namespace segment +
 class name, e.g. `ConsoleInvalidArgumentException` - see the name
 conflict rule in `SKILL.md`, 8). Every rewritten docblock follows the
 house layout on its own (see `SKILL.md`, 13: description, one blank
-star line, the tags sorted alphabetically without blank lines in
-between); `fix:all` still runs `fix:throws` before `fix:php`, which
-then only normalizes import order and whitespace. The `use`
+star line, the tags sorted by name - `@todo` first, then alphabetical
+- without blank lines in between); `fix:all` still runs `fix:throws`
+before `fix:php`, which then only normalizes import order and
+whitespace. The `use`
 statements the merge orphans are left on purpose: `fix:php` drops
 them with `no_unused_imports` (or `lint:php` reports them until then).
 

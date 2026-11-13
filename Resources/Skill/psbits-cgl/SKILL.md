@@ -198,13 +198,19 @@ flag, so a malformed payload or an unencodable value fails with a
 
 The docblock of a method or function carries the description first, then
 one blank star line, then the tags as one block without blank lines in
-between: the tags are sorted alphabetically by tag name (`@param`,
-`@return`, `@see`, `@template`, `@throws`, `@var`), the `@param` lines
-keep their parameter order, and the `@throws` lines their name-sorted
-order (see 3). No blank star line stands directly after the opening
-`/**` or directly before the closing `*/`, and a description line
-never starts with `@` (the tooling would parse it as a tag).
+between: the tags are sorted by tag name - `@todo` first, then all the
+other tags in alphabetical order, a `phpstan-`/`psalm-` variant
+directly after its base tag (the full list is the `phpdoc_order`
+configuration in `src/Quality/CsFixerFactory.php`) - the `@param`
+lines keep their parameter order, the `@throws` lines keep their
+name-sorted order (see 3), and the multiple `@method`, `@property`,
+`@property-read`, `@property-write` and `@mixin` lines are sorted by
+their value (not their type). No blank star line stands directly after
+the opening `/**` or directly before the closing `*/`, and a
+description line never starts with `@` (the tooling would parse it as
+a tag).
 Tooling: `composer fix:throws` rewrites the docblocks to this layout,
-`phpdoc_order` and `phpdoc_separation` (php-cs-fixer) enforce it in
-`lint:php` / `fix:php`, and `PSBits/empty_comments` drops the stray
+`phpdoc_order` (the tag order), `phpdoc_order_by_value` (the
+value-sorted lines) and `phpdoc_separation` (php-cs-fixer) enforce it
+in `lint:php` / `fix:php`, and `PSBits/empty_comments` drops the stray
 blank star lines and the empty shells they leave behind.

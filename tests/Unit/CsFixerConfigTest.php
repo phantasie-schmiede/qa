@@ -37,8 +37,8 @@ final class CsFixerConfigTest extends TestCase
     }
 
     /**
-     * @throws ExpectationFailedException
      * @throws DirectoryNotFoundException
+     * @throws ExpectationFailedException
      */
     public function testConfigHonoursExcludeDirectories(): void
     {
@@ -106,13 +106,64 @@ final class CsFixerConfigTest extends TestCase
         self::assertArrayNotHasKey('native_function_invocation', $rules);
         self::assertSame(
             [
-                'order' => ['param', 'return', 'see', 'template', 'throws', 'var'],
+                'order' => [
+                    'todo',
+                    'access',
+                    'api',
+                    'author',
+                    'category',
+                    'copyright',
+                    'deprecated',
+                    'example',
+                    'extends',
+                    'final',
+                    'implements',
+                    'import-type',
+                    'inheritDoc',
+                    'internal',
+                    'license',
+                    'link',
+                    'method',
+                    'mixin',
+                    'no-named-arguments',
+                    'package',
+                    'param',
+                    'property',
+                    'property-read',
+                    'property-write',
+                    'readonly',
+                    'return',
+                    'see',
+                    'since',
+                    'subpackage',
+                    'template',
+                    'template-contravariant',
+                    'template-covariant',
+                    'throws',
+                    'type',
+                    'use',
+                    'var',
+                    'version',
+                ],
             ],
             $rules['phpdoc_order'],
         );
         self::assertSame(
             [
-                'groups'                    => [['param', 'return', 'see', 'template', 'throws', 'var']],
+                'annotations' => [
+                    'method',
+                    'mixin',
+                    'property',
+                    'property-read',
+                    'property-write',
+                    'throws',
+                ],
+            ],
+            $rules['phpdoc_order_by_value'],
+        );
+        self::assertSame(
+            [
+                'groups'                    => [['*']],
                 'skip_unlisted_annotations' => true,
             ],
             $rules['phpdoc_separation'],

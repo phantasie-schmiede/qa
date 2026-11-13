@@ -14,10 +14,10 @@ use TYPO3\CMS\Core\Localization\Locale;
 final class FakeLanguageServiceFactoryTest extends TestCase
 {
     /**
-     * @throws NoPreviousThrowableException
+     * @throws Exception
      * @throws ExpectationFailedException
      * @throws InvalidArgumentException
-     * @throws Exception
+     * @throws NoPreviousThrowableException
      */
     public function testCreateFromUserPreferencesReturnsTheProvidedLanguageService(): void
     {
@@ -28,10 +28,10 @@ final class FakeLanguageServiceFactoryTest extends TestCase
     }
 
     /**
-     * @throws NoPreviousThrowableException
+     * @throws Exception
      * @throws ExpectationFailedException
      * @throws InvalidArgumentException
-     * @throws Exception
+     * @throws NoPreviousThrowableException
      */
     public function testCreateReturnsTheProvidedLanguageService(): void
     {
