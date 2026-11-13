@@ -77,9 +77,15 @@ the repository directory name).
 
 ### Preparing local and Docker tests
 
-`qa sync` adds `docker:images` when the repository already defines `test:docker`;
-`qa check` verifies its presence. Existing custom scripts are preserved. The
-selection of test suites and `test:all` remains repository-managed.
+`qa sync` detects `*Test.php` files recursively in `Tests/Unit` and
+`Tests/Functional` and adds the matching `test:unit` / `test:functional` scripts.
+With either suite it also adds local/Docker matrix and coverage scripts, plus
+`test:all` (existing suites, then local and Docker). Empty test directories do
+not opt a repository into testing. `docker:images` is added for detected tests
+or an existing `test:docker`, in the same sync run. `qa check` verifies required
+scripts and aggregates. Existing custom scripts and aggregates are preserved;
+aggregate deviations are reported by sync and fail check. Obsolete entries are
+not removed automatically.
 
 - `composer test:local` needs PHP >= 8.3, Composer, the PHP extensions required
   by the repository and test tools, and (for functional tests) the selected PDO

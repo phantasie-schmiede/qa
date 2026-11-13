@@ -53,8 +53,8 @@ repository are added:
 
 - `analyze:php` (PHPStan, needs `Build/Quality/phpstan.neon.dist`)
 - `audit:composer`, `validate:composer` (always)
-- `docker:images` (only when `test:docker` already exists; prepares the
-  extension's test images using `buildTestImages.sh`)
+- `docker:images` (when tests exist or `test:docker` already exists; prepares
+  the extension's test images using `buildTestImages.sh`)
 - `lint:composer` / `fix:composer` (always; the `ergebnis/composer-normalize`
   plugin normalizes the `composer.json` key order and formatting)
 - `lint:php` / `fix:php` (PHP-CS-Fixer, needs
@@ -75,10 +75,14 @@ repository are added:
   docblock with `// t3:N` markers on the major-specific lines, needs
   the PHPStan configuration and network access for the core switches)
 
-`bin/qa sync` also creates `lint:all`, `fix:all` and `qa` when missing. The
-`test:*` scripts and the `post-install-cmd` / `post-update-cmd` bootstrap
-stay under repository management (profile-dependent, handled by
-psbits/crafter where applicable).
+`bin/qa sync` detects `*Test.php` recursively in `Tests/Unit` and
+`Tests/Functional` and adds the corresponding `test:unit` / `test:functional`.
+If either suite exists, it adds `test:local`, `test:docker`, `test:coverage`,
+`test:coverage:update-baseline` and `test:all` (detected suites, then local and
+Docker). Empty test directories do not count. `docker:images` is added in the
+same run. It also creates `lint:all`, `fix:all` and `qa` when missing. Existing
+scripts remain untouched; obsolete entries are not removed. The
+`post-install-cmd` / `post-update-cmd` bootstrap stays repository-managed.
 
 - Existing script entries and aggregate members are never modified. An
   aggregate deviating from the expected standard is reported with the

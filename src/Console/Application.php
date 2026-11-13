@@ -34,6 +34,7 @@ use function ltrim;
 use function mkdir;
 use function rmdir;
 use function sort;
+use function str_ends_with;
 use function str_starts_with;
 use function strcmp;
 use function strlen;
@@ -71,13 +72,15 @@ final class Application
      * below Configuration/TypoScript, and "npm:<script>" the npm script in
      * the caller package.json (the composer script is its proxy), and
      * "composer:<script>" requires that script in the caller composer.json.
+     * "tests:<suite>" requires *Test.php files in that suite, "tests" either
+     * suite, and "docker" tests or an existing test:docker script.
      *
      * @var list<array{name: string, command: list<string>|string, condition: string}>
      */
     private const array SCRIPTS = [
         ['command' => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress', 'condition' => 'phpstan', 'name' => 'analyze:php'],
         ['command' => 'composer audit --abandoned=report', 'condition' => 'always', 'name' => 'audit:composer'],
-        ['command' => ['Composer\\Config::disableProcessTimeout', 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/buildTestImages.sh'], 'condition' => 'composer:test:docker', 'name' => 'docker:images'],
+        ['command' => ['Composer\\Config::disableProcessTimeout', 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/buildTestImages.sh'], 'condition' => 'docker', 'name' => 'docker:images'],
         ['command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes', 'name' => 'fix:classes'],
         ['command' => 'composer normalize', 'condition' => 'always', 'name' => 'fix:composer'],
         ['command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml', 'name' => 'fix:htmlxml'],
@@ -95,6 +98,12 @@ final class Application
         ['command' => 'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript', 'condition' => 'typoscript', 'name' => 'lint:typoscript'],
         ['command' => '.Build/bin/qa xlf-check', 'condition' => 'xlf', 'name' => 'lint:xlf'],
         ['command' => 'yamllint -c .Build/vendor/psbits/qa/Resources/Quality/yamllint.yml Configuration', 'condition' => 'configuration', 'name' => 'lint:yaml'],
+        ['command' => 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runCoverage.sh @additional_args', 'condition' => 'tests', 'name' => 'test:coverage'],
+        ['command' => 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runCoverage.sh --update-baseline @additional_args', 'condition' => 'tests', 'name' => 'test:coverage:update-baseline'],
+        ['command' => ['Composer\\Config::disableProcessTimeout', 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runDockerTests.sh @additional_args'], 'condition' => 'tests', 'name' => 'test:docker'],
+        ['command' => ['php .Build/vendor/psbits/qa/Resources/Testing/renderPhpunitXml.php functional', 'php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/FunctionalTests.xml'], 'condition' => 'tests:Functional', 'name' => 'test:functional'],
+        ['command' => ['Composer\\Config::disableProcessTimeout', 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runLocalTests.sh @additional_args'], 'condition' => 'tests', 'name' => 'test:local'],
+        ['command' => ['php .Build/vendor/psbits/qa/Resources/Testing/renderPhpunitXml.php unit', 'php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/UnitTests.xml'], 'condition' => 'tests:Unit', 'name' => 'test:unit'],
         ['command' => 'composer validate --no-check-publish', 'condition' => 'always', 'name' => 'validate:composer'],
     ];
 
@@ -113,7 +122,8 @@ final class Application
                     psbits-v14-compat), create or sync the caller CI
                     workflow (.github/workflows/ci.yml), and sync the
                     caller composer.json scripts: add the shared scripts
-                    when missing, create lint:all, fix:all and qa when
+                    when missing (test scripts based on *Test.php suites),
+                    create test:all, lint:all, fix:all and qa when
                     missing, and report existing aggregates that deviate
                     from the expected standard
       qa check      Verify hook, skill links and caller CI workflow match
@@ -194,9 +204,10 @@ final class Application
      * canonical order, and qa the fix, lint and test aggregates.
      *
      * @param array<string, list<string>|string> $scripts
-     * @return array{'lint:all': list<string>, 'fix:all': list<string>, 'qa': list<string>}
+     * @return array<string, list<string>>
+     * @throws UnexpectedValueException
      */
-    private static function aggregateStandards(array $scripts): array
+    private static function aggregateStandards(array $scripts, string $root): array
     {
         $lintAll = array_values(array_filter(
             self::LINT_ALL_MEMBERS,
@@ -224,13 +235,28 @@ final class Application
         sort($lintAll);
         sort($rest);
 
+        $standards = ['lint:all' => $lintAll, 'fix:all' => array_merge($fixAll, $rest)];
+        $testAll   = [];
+
+        foreach (['Functional' => 'test:functional', 'Unit' => 'test:unit'] as $suite => $script) {
+            if (self::hasTests($root, $suite)) {
+                $testAll[] = '@' . $script;
+            }
+        }
+
+        if ([] !== $testAll) {
+            $standards['test:all'] = array_merge($testAll, ['@test:local', '@test:docker']);
+        }
+
         $qa = ['@fix:all', '@lint:all'];
 
-        if (isset($scripts['test:all'])) {
+        if (isset($scripts['test:all']) || isset($standards['test:all'])) {
             $qa[] = '@test:all';
         }
 
-        return ['lint:all' => $lintAll, 'fix:all' => array_merge($fixAll, $rest), 'qa' => $qa];
+        $standards['qa'] = $qa;
+
+        return $standards;
     }
 
     private static function callerWorkflow(string $root): string
@@ -315,6 +341,28 @@ final class Application
         $contentB = file_get_contents($b);
 
         return false !== $contentA && $contentA === $contentB;
+    }
+
+    /**
+     * @throws UnexpectedValueException
+     */
+    private static function hasTests(string $root, string $suite): bool
+    {
+        $directory = $root . '/Tests/' . $suite;
+
+        if (!is_dir($directory)) {
+            return false;
+        }
+
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS));
+
+        foreach ($files as $file) {
+            if ($file->isFile() && str_ends_with($file->getFilename(), 'Test.php')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -503,6 +551,24 @@ final class Application
     {
         $condition = $script['condition'];
 
+        if (str_starts_with($condition, 'tests:')) {
+            return self::hasTests($root, substr($condition, strlen('tests:')));
+        }
+
+        if ('tests' === $condition || 'docker' === $condition) {
+            if (self::hasTests($root, 'Unit') || self::hasTests($root, 'Functional')) {
+                return true;
+            }
+
+            if ('docker' === $condition) {
+                $data = json_decode((string) file_get_contents($root . '/composer.json'), true);
+
+                return is_array($data) && isset($data['scripts']['test:docker']);
+            }
+
+            return false;
+        }
+
         if (str_starts_with($condition, 'composer:')) {
             $data = json_decode((string) file_get_contents($root . '/composer.json'), true);
 
@@ -638,12 +704,13 @@ final class Application
     /**
      * Keeps the caller composer.json scripts in sync with the shared QA
      * scripts: the applicable shared scripts are added when missing, the
-     * aggregates lint:all, fix:all and qa are created when missing.
-     * Existing script entries and aggregate members are never modified -
-     * an existing aggregate deviating from the standard is reported with
-     * the expected standard so it can be aligned manually.
+     * applicable aggregates test:all, lint:all, fix:all and qa are created
+     * when missing.Existing script entries and aggregate members are never
+     * modified - an existing aggregate deviating from the standard is
+     * reported with the expected standard so it can be aligned manually.
      *
      * @throws RuntimeException
+     * @throws UnexpectedValueException
      */
     private static function syncScripts(string $root): void
     {
@@ -671,14 +738,14 @@ final class Application
             $changed = true;
         }
 
-        $standards = self::aggregateStandards($scripts);
+        $standards = self::aggregateStandards($scripts, $root);
 
-        foreach (['lint:all', 'fix:all', 'qa'] as $aggregate) {
+        foreach ($standards as $aggregate => $members) {
             if (isset($scripts[$aggregate])) {
                 continue;
             }
 
-            $scripts = self::insertSorted($scripts, $aggregate, $standards[$aggregate]);
+            $scripts = self::insertSorted($scripts, $aggregate, $members);
             echo "created {$aggregate}\n";
             $changed = true;
         }
@@ -692,8 +759,8 @@ final class Application
             }
         }
 
-        foreach (['lint:all', 'fix:all', 'qa'] as $aggregate) {
-            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $standards[$aggregate]);
+        foreach ($standards as $aggregate => $members) {
+            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $members);
 
             if ([] === $deviation['missing'] && [] === $deviation['extra']) {
                 echo "aggregate {$aggregate} unchanged\n";
@@ -702,7 +769,7 @@ final class Application
             }
 
             echo "hint: {$aggregate} deviates from the expected standard\n";
-            self::printAggregateStandard($aggregate, $deviation, $standards[$aggregate]);
+            self::printAggregateStandard($aggregate, $deviation, $members);
         }
     }
 
@@ -712,6 +779,7 @@ final class Application
      * matches the standard.
      *
      * @throws RuntimeException
+     * @throws UnexpectedValueException
      */
     private static function verifyScripts(string $root): int
     {
@@ -732,9 +800,9 @@ final class Application
             }
         }
 
-        $standards = self::aggregateStandards($scripts);
+        $standards = self::aggregateStandards($scripts, $root);
 
-        foreach (['lint:all', 'fix:all', 'qa'] as $aggregate) {
+        foreach ($standards as $aggregate => $members) {
             if (!isset($scripts[$aggregate])) {
                 echo "FAIL: {$aggregate} missing (run qa sync and commit)\n";
                 $failed = 1;
@@ -742,13 +810,13 @@ final class Application
                 continue;
             }
 
-            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $standards[$aggregate]);
+            $deviation = self::aggregateDeviations((array) $scripts[$aggregate], $members);
 
             if ([] === $deviation['missing'] && [] === $deviation['extra']) {
                 echo "ok: {$aggregate}\n";
             } else {
                 echo "FAIL: {$aggregate} deviates from the expected standard\n";
-                self::printAggregateStandard($aggregate, $deviation, $standards[$aggregate]);
+                self::printAggregateStandard($aggregate, $deviation, $members);
                 $failed = 1;
             }
         }

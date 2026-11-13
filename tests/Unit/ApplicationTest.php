@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Exception;
 use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
@@ -55,6 +56,12 @@ final class ApplicationTest extends TestCase
     {
         chdir(sys_get_temp_dir());
         $this->removeTree($this->root);
+    }
+
+    /** @return array<string, array{list<string>}> */
+    public static function suites(): array
+    {
+        return ['both' => [['Unit', 'Functional']], 'functional' => [['Functional']], 'none' => [[]], 'unit' => [['Unit']]];
     }
 
     /**
@@ -299,6 +306,60 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @param list<string> $suites
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
+    #[DataProvider('suites')]
+    public function testSyncAddsScriptsForActualTestSuites(array $suites): void
+    {
+        foreach (['Unit', 'Functional'] as $suite) {
+            mkdir($this->root . '/Tests/' . $suite . '/Nested', 0755, true);
+            file_put_contents($this->root . '/Tests/' . $suite . '/Fixture.php', '<?php');
+
+            if (in_array($suite, $suites, true)) {
+                file_put_contents($this->root . '/Tests/' . $suite . '/Nested/ExampleTest.php', '<?php');
+            }
+        }
+        chdir($this->root);
+        $this->sync();
+        $scripts = $this->composerScripts();
+
+        foreach (['Functional' => 'test:functional', 'Unit' => 'test:unit'] as $suite => $script) {
+            self::assertSame(in_array($suite, $suites, true), isset($scripts[$script]));
+        }
+
+        foreach (['test:local', 'test:docker', 'test:coverage', 'test:coverage:update-baseline', 'test:all', 'docker:images'] as $script) {
+            self::assertSame([] !== $suites, isset($scripts[$script]));
+        }
+
+        if ([] !== $suites) {
+            $members = [];
+
+            foreach (['Functional' => '@test:functional', 'Unit' => '@test:unit'] as $suite => $member) {
+                if (in_array($suite, $suites, true)) {
+                    $members[] = $member;
+                }
+            }
+            self::assertSame(array_merge($members, ['@test:local', '@test:docker']), $scripts['test:all']);
+            self::assertContains('@test:all', $scripts['qa']);
+        }
+
+        self::assertSame(0, $this->check()[0]);
+        $before = file_get_contents($this->root . '/composer.json');
+        $this->sync();
+        self::assertSame($before, file_get_contents($this->root . '/composer.json'));
+
+        if ([] !== $suites) {
+            unset($scripts['test:coverage']);
+            file_put_contents($this->root . '/composer.json', json_encode(['scripts' => $scripts]));
+            [$code, $output] = $this->check();
+            self::assertSame(1, $code);
+            self::assertStringContainsString('FAIL: script test:coverage missing', $output);
+        }
+    }
+
+    /**
      * @throws ExpectationFailedException
      */
     public function testSyncAddsSharedScriptsWithoutTouchingExistingAggregates(): void
@@ -460,6 +521,25 @@ final class ApplicationTest extends TestCase
         chdir($this->root);
         $this->sync();
         self::assertSame('custom builder', $this->composerScripts()['docker:images']);
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
+    public function testSyncPreservesCustomTestsAndReportsTestAllDeviation(): void
+    {
+        mkdir($this->root . '/Tests/Unit', 0755, true);
+        file_put_contents($this->root . '/Tests/Unit/ExampleTest.php', '<?php');
+        file_put_contents($this->root . '/composer.json', json_encode(['scripts' => ['test:all' => ['@test:unit'], 'test:unit' => 'custom unit']]));
+        chdir($this->root);
+        $output = $this->sync();
+        self::assertSame('custom unit', $this->composerScripts()['test:unit']);
+        self::assertSame(['@test:unit'], $this->composerScripts()['test:all']);
+        self::assertStringContainsString('hint: test:all deviates', $output);
+        [$code, $output] = $this->check();
+        self::assertSame(1, $code);
+        self::assertStringContainsString('FAIL: test:all deviates', $output);
     }
 
     /**

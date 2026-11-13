@@ -18,6 +18,8 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Used by local_preflight() in the separately linted preflight.sh.
+# shellcheck disable=SC2034
 REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 
 # shellcheck source=/dev/null  # console.sh is linted separately (same directory)
