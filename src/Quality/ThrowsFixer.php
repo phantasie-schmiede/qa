@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Quality;
 
-use FilesystemIterator;
 use PSBits\Qa\PhpStan\ThrowsDocblockAuditRule;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
+use Random\RandomException;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ExceptionInterface;
+use Symfony\Component\Process\Process;
 use UnexpectedValueException;
 use ValueError;
 
@@ -19,6 +19,7 @@ use function array_merge;
 use function array_slice;
 use function array_unique;
 use function count;
+use function dirname;
 use function explode;
 use function file_get_contents;
 use function file_put_contents;
@@ -28,28 +29,18 @@ use function is_array;
 use function is_dir;
 use function is_executable;
 use function is_file;
-use function is_link;
-use function is_resource;
 use function is_string;
 use function json_decode;
 use function ltrim;
+use function mkdir;
 use function preg_match;
 use function preg_replace;
-use function proc_close;
-use function proc_open;
-use function rename;
 use function reset;
-use function rmdir;
 use function sprintf;
 use function str_starts_with;
-use function strcasecmp;
-use function stream_get_contents;
 use function strpos;
 use function substr;
-use function sys_get_temp_dir;
-use function tempnam;
 use function trim;
-use function unlink;
 use function usort;
 
 /**
@@ -57,12 +48,9 @@ use function usort;
  * TYPO3 core majors.
  *
  * The matrix is read from the typo3/cms-core constraint in the
- * repository's composer.json. For every matrix entry the fixer switches
- * the installed core (composer update --with ... -W, preceded by a full
- * vendor wipe when the core major changes - composer loads the composer
- * plugins from the pre-update vendor state, and a mismatched
- * class-alias-loader major crashes the update) and runs the PHPStan
- * analysis (with the psbits.throwsDocblockAudit rule) in a loop
+ * repository's composer.json. For every matrix entry the fixer creates a
+ * disposable repository copy with its own Composer installation and runs
+ * PHPStan analysis (with the psbits.throwsDocblockAudit rule) in a loop
  * until the docblocks carry the core's thrown set - fixing a callee
  * changes what its callers have to declare, so the fix cascades; the
  * loop aborts with a message after twenty-five rounds per core. A cross
@@ -74,8 +62,10 @@ use function usort;
  * merge: one write per method with the exact union of the per-core
  * thrown sets. A line seen by a single core carries a trailing "// t3:N"
  * marker (analyzer visibility, not runtime throwability); lines seen by
- * no core are removed. The starting core is restored when the run ends,
- * whatever the outcome.
+ * no core are removed. The normal vendor/bin directories and Composer files
+ * remain untouched; no dependency restoration is needed. Only copied repository
+ * files may be mapped back to the original source. The current QA code is
+ * snapshotted for every run, so all majors use the same rules and applier.
  *
  * The per-core loops are additive (only missing @throws lines are
  * added), so a failed or interrupted run never leaves the docblocks in
@@ -88,8 +78,16 @@ final class ThrowsFixer
     public const int MAX_REPAIR_ROUNDS = 3;
     public const int MAX_ROUNDS        = 25;
 
-    public function __construct(private readonly string $repoRoot)
+    private ?ThrowsAnalysisEnvironment $environment = null;
+
+    /** @var array<string, ThrowsAnalysisEnvironment> */
+    private array           $environments = [];
+    private readonly string $repoRoot;
+
+    /** @throws RuntimeException */
+    public function __construct(string $repoRoot)
     {
+        $this->repoRoot = realpath($repoRoot) ?: throw new RuntimeException('repository root not found: ' . $repoRoot);
     }
 
     /**
@@ -173,16 +171,6 @@ final class ThrowsFixer
     }
 
     /**
-     * @param string $version e.g. 13.4.37
-     */
-    private static function majorMinorOf(string $version): string
-    {
-        $parts = explode('.', $version);
-
-        return $parts[0] . '.' . ($parts[1] ?? '0');
-    }
-
-    /**
      * The entries whose expected set is not a subset of the declared set
      * (the methods with @throws lines still to add).
      *
@@ -211,7 +199,9 @@ final class ThrowsFixer
     }
 
     /**
+     * @throws RandomException
      * @throws RuntimeException
+     * @throws UnexpectedValueException
      * @throws ValueError
      */
     public function run(): int
@@ -224,14 +214,6 @@ final class ThrowsFixer
             return 1;
         }
 
-        $startingVersion = $this->installedCoreVersion();
-
-        if (null === $startingVersion) {
-            fwrite(STDERR, "error: typo3/cms-core is not installed (run composer install first)\n");
-
-            return 1;
-        }
-
         $config = $this->repoRoot . '/Build/Quality/phpstan.neon.dist';
 
         if (!is_file($config)) {
@@ -240,24 +222,55 @@ final class ThrowsFixer
             return 1;
         }
 
-        $tempConfig = $this->createTempConfig($config);
-        $applier    = new ThrowsDocblockApplier();
-        $sets       = [];
+        $build = $this->repoRoot . '/.Build/throws-fix';
+
+        if (!is_dir($build) && !mkdir($build, 0755, true)) {
+            throw new RuntimeException('could not create ' . $build);
+        }
+
+        $workspace = $build . '/' . bin2hex(random_bytes(8));
+
+        if (!mkdir($workspace, 0755)) {
+            throw new RuntimeException('could not create ' . $workspace);
+        }
+
+        $applier = new ThrowsDocblockApplier();
+        $sets    = [];
+        $cleaned = true;
 
         try {
-            foreach ($this->orderedMatrix($matrix, $startingVersion) as $majorMinor) {
+            $snapshot = new ThrowsAnalysisEnvironment($this->repoRoot, $workspace);
+            $snapshot->snapshotTooling(dirname(__DIR__, 2), $workspace . '/tooling');
+
+            foreach ($matrix as $majorMinor) {
+                $this->environments[$majorMinor] = new ThrowsAnalysisEnvironment($this->repoRoot, $workspace . '/' . $majorMinor);
                 $this->switchToCore($majorMinor);
-                $sets[$majorMinor] = $this->converge($applier, $tempConfig, $majorMinor);
+                $this->activeEnvironment()->prepare($majorMinor, $workspace . '/tooling');
+                $this->composer(['update', '-W', '--no-scripts', '--no-interaction', '--no-progress', '--prefer-dist']);
+                $installed = json_decode((string) file_get_contents($this->activeEnvironment()->root . '/.Build/vendor/composer/installed.json'), true);
+                $versions  = array_column($installed['packages'] ?? [], 'version', 'name');
+
+                if (!str_starts_with(ltrim($versions['typo3/cms-core'] ?? '', 'v'), $majorMinor . '.')) {
+                    throw new RuntimeException('isolated installation does not contain core ' . $majorMinor);
+                }
+                $sets[$majorMinor] = $this->converge($applier, $majorMinor);
             }
 
-            $this->validateAndRepair($applier, $tempConfig, $matrix, $sets);
+            $this->validateAndRepair($applier, $matrix, $sets);
             $this->merge($applier, $sets);
-
-            return 0;
         } finally {
-            $this->restoreCore($startingVersion);
-            unlink($tempConfig);
+            $this->environment  = null;
+            $this->environments = [];
+
+            try {
+                ThrowsAnalysisEnvironment::remove($workspace);
+            } catch (RuntimeException|UnexpectedValueException $exception) {
+                $cleaned = false;
+                fwrite(STDERR, 'warning: isolated analysis cleanup failed: ' . $exception->getMessage() . "\n");
+            }
         }
+
+        return $cleaned ? 0 : 1;
     }
 
     private function absolute(string $file): string
@@ -269,14 +282,28 @@ final class ThrowsFixer
         return $this->repoRoot . '/' . $file;
     }
 
+    /** @throws RuntimeException */
+    private function activeEnvironment(): ThrowsAnalysisEnvironment
+    {
+        return $this->environment ?? throw new RuntimeException('no active analysis environment');
+    }
+
     /**
      * @return array<string, mixed> the decoded phpstan JSON
      * @throws RuntimeException
      * @throws ValueError
      */
-    private function analyse(string $config): array
+    private function analyse(): array
     {
-        $phpstan = $this->repoRoot . '/.Build/bin/phpstan';
+        $environment = $this->activeEnvironment();
+        $environment->refreshSources();
+        $config  = $environment->root . '/throws-audit.neon';
+        $content = "includes:\n    - Build/Quality/phpstan.neon.dist\nrules:\n    - " . ThrowsDocblockAuditRule::class . "\n";
+
+        if (false === file_put_contents($config, $content)) {
+            throw new RuntimeException('could not write ' . $config);
+        }
+        $phpstan = $environment->root . '/.Build/bin/phpstan';
 
         if (!is_executable($phpstan)) {
             throw new RuntimeException('phpstan not found at ' . $phpstan . ' (run composer install first)');
@@ -291,22 +318,14 @@ final class ThrowsFixer
             '--no-progress',
         ];
 
-        $process = proc_open($command, [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ], $pipes, $this->repoRoot);
+        $process = $this->process($command);
+        $output  = $process['stdout'];
+        $stderr  = $process['stderr'];
 
-        if (!is_resource($process)) {
-            throw new RuntimeException('could not run phpstan');
+        // PHPStan uses 1 for findings; other statuses indicate a failed analysis.
+        if (!in_array($process['code'], [0, 1], true)) {
+            throw new RuntimeException('phpstan failed: ' . trim($stderr ?: substr($output, -400)));
         }
-
-        fclose($pipes[0]);
-        $output = (string) stream_get_contents($pipes[1]);
-        $stderr = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        proc_close($process);
 
         $start = strpos($output, '{"totals"');
 
@@ -329,6 +348,23 @@ final class ThrowsFixer
         }
 
         return $data;
+    }
+
+    /**
+     * @return list<array{file: string, line: int, message: string}>
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    private function analysisEntries(): array
+    {
+        $entries = self::collectEntries($this->analyse());
+
+        foreach ($entries as &$entry) {
+            $entry['file'] = $this->activeEnvironment()->originalFile($entry['file']);
+        }
+        unset($entry);
+
+        return $entries;
     }
 
     /**
@@ -380,12 +416,12 @@ final class ThrowsFixer
      * @throws RuntimeException
      * @throws ValueError
      */
-    private function converge(ThrowsDocblockApplier $applier, string $tempConfig, string $majorMinor): array
+    private function converge(ThrowsDocblockApplier $applier, string $majorMinor): array
     {
         $round = 0;
 
         while (true) {
-            $entries = self::collectEntries($this->analyse($tempConfig));
+            $entries = $this->analysisEntries();
             $missing = self::missingEntries($entries);
 
             if ([] === $missing) {
@@ -422,106 +458,21 @@ final class ThrowsFixer
     }
 
     /**
-     * @throws RuntimeException
-     */
-    private function createTempConfig(string $repoConfig): string
-    {
-        $file = tempnam(sys_get_temp_dir(), 'psbits-throws-');
-
-        if (false === $file) {
-            throw new RuntimeException('could not create the temporary phpstan configuration');
-        }
-
-        $content = sprintf(
-            "includes:\n    - %s\nrules:\n    - %s\n",
-            $repoConfig,
-            ThrowsDocblockAuditRule::class,
-        );
-
-        if (false === file_put_contents($file, $content)) {
-            unlink($file);
-
-            throw new RuntimeException('could not write the temporary phpstan configuration');
-        }
-
-        /*
-         * PHPStan picks the config loader by file extension (Nette DI
-         * rejects files without a known one), and tempnam() names the file
-         * without an extension, so it is renamed to .neon.
-         */
-        $neon = $file . '.neon';
-
-        if (false === rename($file, $neon)) {
-            unlink($file);
-
-            throw new RuntimeException('could not rename the temporary phpstan configuration');
-        }
-
-        return $neon;
-    }
-
-    /**
      * @param list<string> $command
      * @throws RuntimeException
-     * @throws ValueError
      */
     private function exec(array $command): void
     {
-        $process = proc_open($command, [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ], $pipes, $this->repoRoot);
-
-        if (!is_resource($process)) {
-            throw new RuntimeException('could not run ' . $command[0]);
-        }
-
-        fclose($pipes[0]);
-        $output = (string) stream_get_contents($pipes[1]);
-        $stderr = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $code = proc_close($process);
+        $process = $this->process($command);
+        $output  = $process['stdout'];
+        $stderr  = $process['stderr'];
+        $code    = $process['code'];
 
         if (0 !== $code) {
             $detail = trim('' !== $stderr ? $stderr : substr($output, -400));
 
             throw new RuntimeException('"' . implode(' ', $command) . '" failed' . ('' !== $detail ? ': ' . $detail : ''));
         }
-    }
-
-    /**
-     * @return null|string the installed typo3/cms-core version (e.g. 13.4.37)
-     */
-    private function installedCoreVersion(): ?string
-    {
-        $installed = $this->repoRoot . '/.Build/vendor/composer/installed.json';
-
-        if (!is_file($installed)) {
-            return null;
-        }
-
-        $data = json_decode((string) file_get_contents($installed), true);
-
-        if (!is_array($data)) {
-            return null;
-        }
-
-        foreach (($data['packages'] ?? []) as $package) {
-            if (is_array($package) && 'typo3/cms-core' === ($package['name'] ?? null)) {
-                /*
-                 * Composer records versions with a leading "v" (e.g.
-                 * v14.3.10); strip it so the major compares equal to
-                 * the matrix entries.
-                 */
-                $version = ltrim((string) ($package['version'] ?? ''), 'v');
-
-                return '' !== $version ? $version : null;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -608,81 +559,45 @@ final class ThrowsFixer
     }
 
     /**
-     * The matrix ordered with the major of the installed core first, so
-     * that the first leg needs no core switch.
+     * Drain stdout and stderr concurrently; Composer can fill stderr while
+     * stdout is idle. Updates/analysis have no fixed wall-clock timeout.
      *
-     * @param list<string> $matrix
-     * @return list<string>
+     * @param list<string> $command
+     * @return array{stdout: string, stderr: string, code: int|null}
+     * @throws RuntimeException
      */
-    private function orderedMatrix(array $matrix, string $installedVersion): array
+    private function process(array $command): array
     {
-        $installedMajor = explode('.', $installedVersion)[0];
-
-        usort($matrix, static function(string $a, string $b) use ($installedMajor): int {
-            $rankA = explode('.', $a)[0] === $installedMajor ? 0 : 1;
-            $rankB = explode('.', $b)[0] === $installedMajor ? 0 : 1;
-
-            return $rankA <=> $rankB ?: strcasecmp($a, $b);
-        });
-
-        return $matrix;
-    }
-
-    /**
-     * Restores the starting core; a failed restore is reported, but does
-     * not mask the original error (this runs in the finally block).
-     */
-    private function restoreCore(string $startingVersion): void
-    {
-        $installed = (string) $this->installedCoreVersion();
-
-        if (0 === strcasecmp($installed, $startingVersion)) {
-            return;
-        }
-
         try {
-            if (explode('.', $installed)[0] !== explode('.', $startingVersion)[0]) {
-                $this->wipeVendor();
-            }
+            $root    = $this->activeEnvironment()->root;
+            $process = new Process($command, $root, [
+                'COMPOSER'                 => 'composer.json',
+                'COMPOSER_VENDOR_DIR'      => false,
+                'COMPOSER_BIN_DIR'         => false,
+                'PSBITS_QA_REPO_ROOT'      => $root,
+                'TYPO3_PATH_APP'           => $root,
+                'TYPO3_PATH_ROOT'          => $root . '/.Build/public',
+                'TYPO3_PATH_WEB'           => $root . '/.Build/public',
+                'TYPO3_PATH_COMPOSER_ROOT' => $root,
+            ], timeout: null);
+            $process->run();
 
-            $this->composer(['update', '--with', 'typo3/cms-core:' . $startingVersion, '-W']);
-            echo "throws-fix: core restored to {$startingVersion}\n";
-        } catch (RuntimeException|ValueError $exception) {
-            fwrite(
-                STDERR,
-                sprintf(
-                    "error: the core could not be restored to %s (%s); run \"composer update --with typo3/cms-core:%s -W\" manually\n",
-                    $startingVersion,
-                    $exception->getMessage(),
-                    $startingVersion,
-                ),
-            );
+            return ['stdout' => $process->getOutput(), 'stderr' => $process->getErrorOutput(), 'code' => $process->getExitCode()];
+        } catch (ExceptionInterface $exception) {
+            throw new RuntimeException('could not run ' . $command[0] . ': ' . $exception->getMessage(), 0, $exception);
         }
     }
 
     /**
-     * Switches the installed core to the matrix entry; a no-op when the
-     * entry already matches the installed version. A core major change
-     * wipes the vendor directory first (see wipeVendor()).
+     * Selects the disposable installation for a matrix entry.
      *
      * @throws RuntimeException
      * @throws ValueError
      */
     private function switchToCore(string $majorMinor): void
     {
-        $installed = $this->installedCoreVersion();
-
-        if (null !== $installed && 0 === strcasecmp($majorMinor, self::majorMinorOf($installed))) {
-            return;
-        }
-
-        if (null !== $installed && explode('.', $majorMinor)[0] !== explode('.', $installed)[0]) {
-            $this->wipeVendor();
-        }
-
-        echo 'throws-fix: switching core ' . (null !== $installed ? $installed . ' -> ' : '') . '^' . $majorMinor . "\n";
-
-        $this->composer(['update', '--with', 'typo3/cms-core:^' . $majorMinor, '-W']);
+        $this->environment = $this->environments[$majorMinor];
+        echo 'throws-fix: isolated core ' . $majorMinor . ' at ' . $this->environment->root . "\n";
     }
 
     /**
@@ -695,14 +610,14 @@ final class ThrowsFixer
      * @throws RuntimeException
      * @throws ValueError
      */
-    private function validateAndRepair(ThrowsDocblockApplier $applier, string $tempConfig, array $matrix, array &$sets): void
+    private function validateAndRepair(ThrowsDocblockApplier $applier, array $matrix, array &$sets): void
     {
         for ($cycle = 1; self::MAX_REPAIR_ROUNDS >= $cycle; ++$cycle) {
             $repair = [];
 
             foreach ($matrix as $majorMinor) {
                 $this->switchToCore($majorMinor);
-                $entries = self::collectEntries($this->analyse($tempConfig));
+                $entries = $this->analysisEntries();
                 $missing = self::missingEntries($entries);
 
                 if ([] === $missing) {
@@ -728,49 +643,8 @@ final class ThrowsFixer
 
             foreach (array_keys($repair) as $majorMinor) {
                 $this->switchToCore($majorMinor);
-                $sets[$majorMinor] = $this->converge($applier, $tempConfig, $majorMinor);
+                $sets[$majorMinor] = $this->converge($applier, $majorMinor);
             }
-        }
-    }
-
-    /**
-     * Removes the whole vendor directory (no-op when it does not exist)
-     * so that the composer run starts from a clean vendor state:
-     * composer loads the composer plugins from the pre-update vendor
-     * state, and a class-alias-loader major that mismatches the target
-     * core crashes the update (missing CaseSensitiveToken/SuffixToken
-     * class).
-     *
-     * @throws RuntimeException
-     */
-    private function wipeVendor(): void
-    {
-        $directory = $this->repoRoot . '/.Build/vendor';
-
-        if (!is_dir($directory)) {
-            return;
-        }
-
-        try {
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::CHILD_FIRST,
-            );
-
-            foreach ($iterator as $item) {
-                $itemPath = $item->getPathname();
-                $removed  = is_dir($itemPath) && !is_link($itemPath) ? rmdir($itemPath) : unlink($itemPath);
-
-                if (false === $removed) {
-                    throw new RuntimeException('could not remove ' . $itemPath);
-                }
-            }
-        } catch (UnexpectedValueException $exception) {
-            throw new RuntimeException('could not remove ' . $directory, 0, $exception);
-        }
-
-        if (false === rmdir($directory)) {
-            throw new RuntimeException('could not remove ' . $directory);
         }
     }
 }

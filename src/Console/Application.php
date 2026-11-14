@@ -145,7 +145,10 @@ final class Application
                     rounds each): the docblocks end up as the union of
                     the per-major thrown sets, a "// t3:N" marker on
                     the lines a single major sees, the lines no major
-                    sees are removed, and the starting core is restored
+                    sees are removed. Uses disposable repository copies and
+                    Composer installations per core in .Build/throws-fix;
+                    normal vendor/bin and Composer files remain unchanged.
+                    Requires network access; no core restoration is needed
       qa xlf-check  Report the XLIFF files with unsorted trans-unit or
                     group ids
       qa xlf-fix    Sort the XLIFF trans-unit and group ids

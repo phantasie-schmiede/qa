@@ -8,10 +8,14 @@ declare(strict_types=1);
  * logs every invocation. The working directory is the fixture repository
  * root.
  */
-$state = getcwd() . '/.state';
+$state = file_get_contents(__DIR__ . '/test-state');
 $call  = is_file($state . '/phpstan-calls') ? (int) file_get_contents($state . '/phpstan-calls') : 0;
 file_put_contents($state . '/phpstan-calls', (string) ($call + 1));
 file_put_contents($state . '/phpstan.log', json_encode($argv) . "\n", FILE_APPEND);
+
+if (is_file($state . '/large-stderr')) {
+    fwrite(STDERR, str_repeat('phpstan diagnostic ', 65536));
+}
 
 $responses = json_decode((string) file_get_contents($state . '/responses.json'), true);
 
@@ -30,3 +34,6 @@ if (null === $data) {
 }
 
 echo json_encode($data);
+file_put_contents($state . '/sources.log', file_get_contents(getcwd() . '/src/Service.php') . "\n", FILE_APPEND);
+
+exit(is_file($state . '/phpstan-exit') ? (int) file_get_contents($state . '/phpstan-exit') : 0);

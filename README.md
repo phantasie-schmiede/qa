@@ -149,6 +149,39 @@ The CI `lint` job (single PHP 8.4) runs `composer analyze:php`,
 
 ## CLI
 
+### Side effects of `qa throws-fix`
+
+The fixer creates one disposable repository copy and Composer installation per
+core version in `.Build/throws-fix/<run-id>/<core>/`. The normal vendor/bin
+directories, `composer.json` and `composer.lock` remain unchanged; no restore
+is needed. Dependencies are freshly resolved with Composer `update -W
+--no-scripts`; the regular Composer download cache is reused. Network access
+and additional disk space are needed, even for a single core.
+
+The current QA code is copied into the run directory and installed as a mirrored
+path package in every environment. Repository-relative PHPStan includes and
+autoload paths keep working in the copied directory structure. Absolute NEON
+references into the repository are redirected into the copy. Relative path
+repositories are resolved against the original root and mirrored, not symlinked.
+Source symlinks and autoload paths outside the repository are rejected rather
+than exposing original files through a link. Custom bootstraps must work within
+the repository copy; this is filesystem isolation, not an OS security sandbox.
+
+Only files copied from the repository are eligible for docblock updates in the
+original source. Updated files are refreshed before each analysis; dependency
+paths and paths outside the copy are rejected. Avoid concurrent edits to the
+source during the fixer run. Existing additive convergence and the final merge
+remain unchanged.
+
+Run directories are removed after completion and exceptions. Cleanup failure
+fails an otherwise successful run without hiding an existing analysis error.
+Forced termination (e.g. SIGKILL) can leave a run directory behind, but does not
+require restoring the normal dependency installation.
+
+Composer and PHPStan output streams are drained concurrently to avoid blocking
+on large stderr output. Processes have no fixed runtime timeout, matching long
+dependency resolutions and iterative analysis.
+
 ```
 bin/qa sync    install git hook + skill symlinks and create or sync the
                caller CI workflow (idempotent)

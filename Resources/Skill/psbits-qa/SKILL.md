@@ -78,10 +78,21 @@ repository are added:
   order, need `*.xlf` files) and `fix:throws` (rewrite the `@throws`
   docblocks
   against the full matrix of supported core majors: the tooling
-  switches the installed core per matrix entry, converges the PHPStan
+  creates isolated Composer installations per matrix entry, converges the PHPStan
   audit loop per major, then merges the per-major sets into one
   docblock with `// t3:N` markers on the major-specific lines, needs
   the PHPStan configuration and network access for the core switches)
+
+`fix:throws` uses disposable repository copies and Composer installations under
+`.Build/throws-fix/<run-id>/<core>`. Normal vendor/bin and Composer files remain
+unchanged; no restore is needed. Every core resolves fresh dependencies with
+`--no-scripts` and uses a snapshot of the current QA code. Copies are refreshed
+after docblock edits; only copied source files can be mapped back to originals.
+Relative path repositories are mirrored. Source symlinks and external autoload
+paths are rejected. Custom bootstraps must work in the copy; this is not an OS
+security sandbox. Do not edit source concurrently. Cleanup runs on completion
+and exceptions; failures fail successful runs without hiding analysis errors.
+Forced termination may leave disposable files, not a changed normal installation.
 
 `bin/qa sync` detects `*Test.php` recursively in `Tests/Unit` and
 `Tests/Functional` and adds the corresponding `test:unit` / `test:functional`.
