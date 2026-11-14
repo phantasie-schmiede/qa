@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 /**
  * Fake phpstan binary for the ThrowsFixerTest orchestration tests: prints
  * the staged JSON responses (one per call, in order), counts the calls, and

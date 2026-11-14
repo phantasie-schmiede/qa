@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 // Read-only checks: run before generating matrix files or changing dependencies.
 $root         = $argv[1];
 $database     = $argv[2];

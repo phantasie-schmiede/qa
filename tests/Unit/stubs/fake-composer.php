@@ -3,6 +3,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 /**
  * Fake composer binary for the ThrowsFixerTest orchestration tests: logs
  * every invocation, switches the installed typo3/cms-core version in

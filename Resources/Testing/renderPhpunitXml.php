@@ -3,6 +3,13 @@
 declare(strict_types=1);
 
 /*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
+/*
  * Renders the phpunit suite configurations into <repo>/.Build/phpunit/
  * (git-ignored) with absolute paths, because the committed XMLs would
  * resolve their relative bootstrap/cache/testsuite paths against the
