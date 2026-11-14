@@ -220,3 +220,14 @@ Tooling: `composer fix:throws` rewrites the docblocks to this layout,
 value-sorted lines) and `phpdoc_separation` (php-cs-fixer) enforce it
 in `lint:php` / `fix:php`, and `PSBits/empty_comments` drops the stray
 blank star lines and the empty shells they leave behind.
+
+### 14. Comments are complete English sentences
+
+Prose in comments and docblock descriptions is written in complete
+sentences with correct spelling and grammar, in English: the first letter
+is capitalized and the sentence carries its end punctuation (`.` by
+default, `!` or `?` where the content calls for it). Markers and
+directives that are not prose stay as they are - the `// t3:13` /
+`// t3:14` core-major markers, the `// PSBits/...` directive comments,
+single-word notes like `// deprecated`.
+AI-side only - no tool enforces comment grammar.
