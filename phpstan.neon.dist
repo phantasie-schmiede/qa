@@ -14,7 +14,7 @@ parameters:
         # PHP_CodeSniffer has no composer autoload section; its own
         # autoloader registers the classes the tests reference (Config,
         # Ruleset, Util\Tokens, Exceptions\RuntimeException).
-        - vendor/squizlabs/php_codesniffer/autoload.php
+        - .Build/vendor/squizlabs/php_codesniffer/autoload.php
     tmpDir: .Build/phpstan
     paths:
         - src

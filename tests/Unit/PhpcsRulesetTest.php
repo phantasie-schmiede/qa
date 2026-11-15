@@ -31,7 +31,7 @@ if (false === defined('PHP_CODESNIFFER_CBF')) {
     define('PHP_CODESNIFFER_CBF', false);
 }
 
-require_once __DIR__ . '/../../vendor/squizlabs/php_codesniffer/autoload.php';
+require_once __DIR__ . '/../../.Build/vendor/squizlabs/php_codesniffer/autoload.php';
 
 /* Loads the token constants the sniffs register against. */
 Tokens::tokenName(T_WHITESPACE);

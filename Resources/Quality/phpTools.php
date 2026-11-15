@@ -54,11 +54,11 @@ if (is_file($root . '/Build/Quality/.php-cs-fixer.dist.php') || is_file($root . 
 } else {
     /*
      * The psbits/qa repository itself: the self-lint configurations at
-     * the root, the tool binaries in its vendor directory.
+     * the root, the tool binaries in its .Build/bin directory.
      */
     $csFixerConfig = '.php-cs-fixer.php';
     $phpcsStandard = '.phpcs.xml.dist';
-    $binDir        = $root . '/vendor/bin';
+    $binDir        = $root . '/.Build/bin';
 }
 
 $paths = [];

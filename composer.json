@@ -35,7 +35,14 @@
             "typo3/class-alias-loader": true,
             "typo3/cms-composer-installers": true
         },
-        "sort-packages": true
+        "bin-dir": ".Build/bin",
+        "sort-packages": true,
+        "vendor-dir": ".Build/vendor"
+    },
+    "extra": {
+        "typo3/cms": {
+            "web-dir": ".Build/public"
+        }
     },
     "scripts": {
         "analyze:php": "phpstan analyse --no-progress",

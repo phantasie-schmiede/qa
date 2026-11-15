@@ -43,7 +43,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            vendor
+            .Build/vendor
+            .Build/bin
           key: vendor-${{ runner.os }}-p${{ matrix.php }}-${{ hashFiles('composer.json') }}
           restore-keys: |
             vendor-${{ runner.os }}-p${{ matrix.php }}-
@@ -52,7 +53,7 @@ jobs:
         run: composer update --prefer-dist --no-interaction --no-progress
 
       - name: Run tests
-        run: vendor/bin/phpunit -c tests/phpunit.xml.dist
+        run: .Build/bin/phpunit -c tests/phpunit.xml.dist
 
       - name: Lint shell scripts
         run: |
@@ -99,7 +100,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            vendor
+            .Build/vendor
+            .Build/bin
           key: vendor-${{ runner.os }}-p8.4-${{ hashFiles('composer.json') }}
           restore-keys: |
             vendor-${{ runner.os }}-p8.4-

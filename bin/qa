@@ -11,9 +11,8 @@ declare(strict_types=1);
  */
 
 $autoloads = [
-    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../.Build/vendor/autoload.php',
     __DIR__ . '/../../../autoload.php',
-    __DIR__ . '/../autoload.php',
 ];
 foreach ($autoloads as $autoload) {
     if (file_exists($autoload)) {
