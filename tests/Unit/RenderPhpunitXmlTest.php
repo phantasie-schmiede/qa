@@ -123,6 +123,7 @@ final class RenderPhpunitXmlTest extends TestCase
         if (!is_dir($path)) {
             return;
         }
+
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST,
@@ -132,6 +133,7 @@ final class RenderPhpunitXmlTest extends TestCase
             $itemPath = $item->getPathname();
             is_link($itemPath) ? unlink($itemPath) : ($item->isDir() ? rmdir($itemPath) : unlink($itemPath));
         }
+
         rmdir($path);
     }
 

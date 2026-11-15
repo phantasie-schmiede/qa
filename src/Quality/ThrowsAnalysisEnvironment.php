@@ -135,6 +135,7 @@ final class ThrowsAnalysisEnvironment
                         if (str_starts_with($path, '/') || in_array('..', explode('/', $path), true)) {
                             throw new RuntimeException('autoload path outside the repository is not supported: ' . $path);
                         }
+
                         $mapped[] = $path;
                     }
 
@@ -160,6 +161,7 @@ final class ThrowsAnalysisEnvironment
                 $repository['options']['symlink'] = false;
             }
         }
+
         unset($repository);
 
         $version              = InstalledVersions::isInstalled('psbits/qa') ? InstalledVersions::getPrettyVersion('psbits/qa') : 'dev-main';

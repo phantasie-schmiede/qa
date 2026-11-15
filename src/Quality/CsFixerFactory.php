@@ -130,20 +130,23 @@ final class CsFixerFactory
                     'on_multiline'  => 'ensure_fully_multiline',
                 ],
                 'no_extra_blank_lines'            => [
+                    /*
+                     * The jump-statement tokens (break, continue, return,
+                     * throw) are not listed on purpose: they drop the blank
+                     * line a jump statement leaves at the end of a case body,
+                     * where the Slevomat control-structure spacing rule (see
+                     * phpcs.xml) requires the separation from the next case.
+                     */
                     'tokens' => [
                         'attribute',
-                        'break',
                         'case',
                         'comma',
-                        'continue',
                         'curly_brace_block',
                         'default',
                         'extra',
                         'parenthesis_brace_block',
-                        'return',
                         'square_brace_block',
                         'switch',
-                        'throw',
                         'use',
                     ],
                 ],

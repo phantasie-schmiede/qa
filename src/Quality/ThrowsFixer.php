@@ -260,6 +260,7 @@ final class ThrowsFixer
                 if (!str_starts_with(ltrim($versions['typo3/cms-core'] ?? '', 'v'), $majorMinor . '.')) {
                     throw new RuntimeException('isolated installation does not contain core ' . $majorMinor);
                 }
+
                 $sets[$majorMinor] = $this->converge($applier, $majorMinor);
             }
 
@@ -310,6 +311,7 @@ final class ThrowsFixer
         if (false === file_put_contents($config, $content)) {
             throw new RuntimeException('could not write ' . $config);
         }
+
         $phpstan = $environment->root . '/.Build/bin/phpstan';
 
         if (!is_executable($phpstan)) {
@@ -369,6 +371,7 @@ final class ThrowsFixer
         foreach ($entries as &$entry) {
             $entry['file'] = $this->activeEnvironment()->originalFile($entry['file']);
         }
+
         unset($entry);
 
         return $entries;

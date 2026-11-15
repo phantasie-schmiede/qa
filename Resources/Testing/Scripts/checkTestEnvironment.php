@@ -70,6 +70,7 @@ if ($functional && extension_loaded($driver)) {
             if (false === $password) {
                 $password = 'mysql' === $database ? '' : 'postgres';
             }
+
             // Connect to the server, not the test database: the framework creates it.
             $dsn = 'mysql' === $database
                 ? sprintf('mysql:host=%s;port=%s', $host, $port)

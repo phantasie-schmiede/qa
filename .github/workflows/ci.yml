@@ -78,8 +78,10 @@ jobs:
     # The package is linted with the very tooling it ships to the
     # extension repositories: PHPStan with the shared baseline
     # (phpstan.neon.dist includes Resources/Quality/phpstan.neon),
-    # php-cs-fixer with the shared CGL configuration (.php-cs-fixer.php
-    # calls CsFixerFactory) and composer normalize.
+    # PHP-CS-Fixer and PHP_CodeSniffer with the shared Slevomat ruleset
+    # (composer lint:php, driven by the shared phpTools runner - the root
+    # .php-cs-fixer.php calls CsFixerFactory, the root .phpcs.xml.dist
+    # references Resources/Quality/phpcs.xml) and composer normalize.
     name: Lint
     runs-on: ubuntu-latest
 

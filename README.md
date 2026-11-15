@@ -8,7 +8,9 @@ holds the single source of truth for:
 - the PHPUnit suite configurations - rendered into `<repo>/.Build/phpunit/`
   (git-ignored) with absolute paths by `Resources/Testing/renderPhpunitXml.php`
 - linter and fixer configuration - `Resources/Quality/` (php-cs-fixer incl. the
-  shared `PSBits/*` custom fixers, PHPStan baseline, prettier, yamllint,
+  shared `PSBits/*` custom fixers, the `phpTools.php` runner behind
+  `lint:php`/`fix:php`, PHP_CodeSniffer with the Slevomat
+  control-structure spacing ruleset, PHPStan baseline, prettier, yamllint,
   typoscript-lint, lint-class-attributes)
 - the shared skills (`psbits-qa`, `psbits-foundation`, `psbits-v14-compat`) and
   the git pre-commit hook - `Resources/Skill/`, `Resources/GitHooks/`, installed
@@ -82,6 +84,9 @@ when Git metadata exists.
 
 The extension keeps only its repo-specific QA files:
 `Build/Quality/phpstan.neon.dist` (thin shim over the package baseline),
+`Build/Quality/.php-cs-fixer.dist.php` (thin shim calling `CsFixerFactory` with
+the repository's analysis scope), `Build/Quality/.phpcs.xml.dist` (thin shim
+over the shared PHP_CodeSniffer ruleset, declaring the analysis scope),
 `Build/Quality/coverage-baseline.json` and `Build/Quality/.prettierignore`
 (where applicable). The composer scripts point at the package resources, e.g.
 
@@ -89,6 +94,23 @@ The extension keeps only its repo-specific QA files:
 php .Build/vendor/psbits/qa/Resources/Testing/renderPhpunitXml.php unit
 php -d memory_limit=1G .Build/bin/phpunit -c .Build/phpunit/UnitTests.xml
 ```
+
+The `lint:php`/`fix:php` scripts drive both PHP tools through the shared
+runner `php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php
+lint|fix`: it runs the PHP-CS-Fixer and the PHP_CodeSniffer configuration
+that exists in the repository and passes the CLI paths to every tool that
+runs. When upgrading to the package version that introduced the runner,
+the existing `lint:php`/`fix:php` lines are updated manually - `qa sync`
+never rewrites existing script entries.
+
+Besides the scripts, `qa sync` keeps the `config.allow-plugins` entries the
+shared tooling requires in the caller `composer.json` (currently the
+`dealerdirect/phpcodesniffer-composer-installer` plugin, which registers the
+Slevomat standard with PHP_CodeSniffer) and `qa check` verifies them: missing
+or disabled entries are added by sync (or left untouched, with a hint, when
+explicitly disabled) and fail check. A repository's first `composer update`
+after the plugin becomes part of the dependency tree must carry the entry
+already - Composer blocks not-allowed plugins before any script can run.
 
 The test matrix scripts resolve the repository root from `PSBITS_QA_REPO_ROOT`
 or the current working directory (composer and CI both run from the repo
@@ -143,9 +165,12 @@ The package is linted with the tooling it ships: the root
 `phpstan.neon.dist` includes the shared baseline
 `Resources/Quality/phpstan.neon` (paths `src`, `tests`, `bin/qa`), the root
 `.php-cs-fixer.php` calls `CsFixerFactory::create(['src', 'tests',
-'Resources'])`, and `composer normalize` keeps the `composer.json` clean.
+'Resources'])`, the root `.phpcs.xml.dist` references the shared ruleset
+`Resources/Quality/phpcs.xml` (analysis scope `src`, `tests`, `Resources`),
+and `composer normalize` keeps the `composer.json` clean.
 The CI `lint` job (single PHP 8.4) runs `composer analyze:php`,
-`composer lint:composer` and `composer lint:php`.
+`composer lint:composer` and `composer lint:php` (both PHP tools via the
+shared phpTools runner).
 
 ## CLI
 

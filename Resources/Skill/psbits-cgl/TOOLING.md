@@ -13,14 +13,19 @@ not in the repository (see the `psbits-qa` skill for the layout).
   marker-aware `psbits.throwsThrowable` rule, which takes the built-in
   `throws.notThrowable` check's place - that check sees the installed
   core only, while the docblock carries the union of all supported
-  core majors), `lint:xlf`, the php-cs-fixer dry-run with all the
-  `PSBits/*` fixers, yaml/typoscript/class linters.
+  core majors), `lint:xlf`, `lint:php` (the shared phpTools runner: the
+  php-cs-fixer dry-run with all the `PSBits/*` fixers plus
+  PHP_CodeSniffer with the Slevomat control-structure spacing rule, see
+  `SKILL.md`, 15), yaml/typoscript/class linters.
 - `composer fix:all` - applies the fixes in this order: `fix:classes`,
   `fix:composer` (the composer.json normalization), `fix:htmlxml`,
   `fix:json` (Prettier for the package.json), `fix:throws` (the
   @throws full-matrix loop, which writes short names + the missing
-  `use` statements itself), `fix:xlf`, `fix:php` (the php-cs-fixer run;
-  its `phpdoc_order` sorts the docblock tags, its
+  `use` statements itself), `fix:xlf`, `fix:php` (the shared phpTools
+  runner: the PHP_CodeSniffer autofix for the Slevomat
+  control-structure spacing rule - it adjusts the blank lines around
+  block control structures only, no indentation - followed by the
+  php-cs-fixer run; its `phpdoc_order` sorts the docblock tags, its
   `phpdoc_order_by_value` keeps the `@throws` lines sorted by
   exception name and the `@method`, `@property`, `@property-read`,
   `@property-write` and `@mixin` lines sorted by their value, its
@@ -32,6 +37,22 @@ not in the repository (see the `psbits-qa` skill for the layout).
   individual commands (`.Build/bin/qa throws-fix|check|fix`).
 - After `fix:all`, always run `lint:all` and the test suites; a green
   `lint:all` is the definition of a CGL-compliant change.
+
+## Tool ownership: blank lines around control structures
+
+The Slevomat rule (PHP_CodeSniffer, behind `lint:php` / `fix:php` via
+the shared phpTools runner) owns the blank lines around block control
+structures, `case` labels included; the php-cs-fixer configuration
+therefore does not manage them: the `no_extra_blank_lines` tokens
+`break`, `continue`, `return` and `throw` were removed on purpose - they
+drop the blank line a closing jump statement leaves at the end of a
+`case` body, exactly the spot where the Slevomat rule requires the
+separation from the next `case`. With both tools active the results are
+stable fixed points of each other (inside `fix:php` the PHP_CodeSniffer
+autofix runs before the PHP-CS-Fixer run, whose `statement_indentation`
+repairs any line the Slevomat fixer touched but does not re-indent). Do
+not re-add the jump-statement tokens to `no_extra_blank_lines` - the
+linters would fight forever.
 
 ## The throws-fix full matrix
 

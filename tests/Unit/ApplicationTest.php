@@ -25,9 +25,9 @@ final class ApplicationTest extends TestCase
         'analyze:php'       => 'phpstan analyse --configuration=Build/Quality/phpstan.neon.dist --no-progress',
         'audit:composer'    => 'composer audit --abandoned=report',
         'fix:all'           => ['@fix:php'],
-        'fix:php'           => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --verbose',
+        'fix:php'           => 'php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php fix',
         'lint:all'          => ['@analyze:php', '@audit:composer', '@lint:php', '@validate:composer'],
-        'lint:php'          => 'php-cs-fixer fix --config=Build/Quality/.php-cs-fixer.dist.php --dry-run --diff --verbose',
+        'lint:php'          => 'php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php lint',
         'post-install-cmd'  => ['.Build/bin/qa sync'],
         'post-update-cmd'   => ['.Build/bin/qa sync'],
         'qa'                => ['@fix:all', '@lint:all', '@test:all'],
@@ -58,6 +58,7 @@ final class ApplicationTest extends TestCase
             mkdir($skillDir, 0755, true);
             file_put_contents($skillDir . '/SKILL.md', "# Skill\n");
         }
+
         file_put_contents($this->root . '/composer.json', "{}\n");
         (new Process(['git', 'init', '--quiet', $this->root]))->mustRun();
     }
@@ -147,6 +148,24 @@ final class ApplicationTest extends TestCase
         self::assertSame(1, $exit);
         self::assertStringContainsString('FAIL: ' . $aggregate . ' deviates', $output);
         self::assertStringContainsString($reason, $output);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testCheckFailsOnMissingAllowPluginsConfig(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+
+        $scripts = $this->composerScripts();
+        $this->writeRepositoryFixtures($scripts, true, true, false);
+
+        [$exit, $output] = $this->check();
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: allow-plugins.dealerdirect/phpcodesniffer-composer-installer missing or not true (run qa sync and commit)', $output);
     }
 
     /**
@@ -250,11 +269,11 @@ final class ApplicationTest extends TestCase
         $scripts             = $this->composerScripts();
         $scripts['lint:all'] = array_reverse($scripts['lint:all']);
         $scripts['test:all'] = array_reverse($scripts['test:all']);
-        file_put_contents($this->root . '/composer.json', json_encode(['scripts' => $scripts]));
+        $this->writeComposerJson($scripts);
         self::assertSame(0, $this->check()[0]);
 
         $scripts['test:all'][] = '@test:unit';
-        file_put_contents($this->root . '/composer.json', json_encode(['scripts' => $scripts]));
+        $this->writeComposerJson($scripts);
         [$exit, $output] = $this->check();
         self::assertSame(1, $exit);
         self::assertStringContainsString('duplicates: @test:unit', $output);
@@ -298,6 +317,7 @@ final class ApplicationTest extends TestCase
         $this->writeNpmScripts(['fix:classes', 'fix:htmlxml', 'fix:json', 'lint:classes', 'lint:htmlxml', 'lint:json']);
         $this->writeConfiguration();
         $this->writeCsFixerShim();
+        $this->writePhpcsShim();
         chdir($this->root);
 
         $this->sync();
@@ -307,18 +327,22 @@ final class ApplicationTest extends TestCase
         foreach (
             [
                 'analyze:php', 'audit:composer', 'fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json',
-                'fix:php', 'fix:throws', 'fix:xlf', 'lint:classes', 'lint:composer', 'lint:htmlxml',
-                'lint:json', 'lint:php', 'lint:typoscript', 'lint:xlf', 'lint:yaml', 'validate:composer',
+                'fix:php', 'fix:throws', 'fix:xlf', 'lint:classes', 'lint:composer',
+                'lint:htmlxml', 'lint:json', 'lint:php', 'lint:typoscript', 'lint:xlf',
+                'lint:yaml', 'validate:composer',
             ] as $name
         ) {
             self::assertArrayHasKey($name, $scripts);
         }
+
         self::assertSame('npm run lint:classes', $scripts['lint:classes']);
         self::assertSame('npm run fix:htmlxml', $scripts['fix:htmlxml']);
         self::assertSame('composer normalize', $scripts['fix:composer']);
         self::assertSame('composer normalize --dry-run --diff --no-check-lock --no-update-lock', $scripts['lint:composer']);
         self::assertSame('npm run fix:json', $scripts['fix:json']);
         self::assertSame('npm run lint:json', $scripts['lint:json']);
+        self::assertSame('php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php fix', $scripts['fix:php']);
+        self::assertSame('php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php lint', $scripts['lint:php']);
         self::assertSame(
             'typoscript-lint --config=.Build/vendor/psbits/qa/Resources/Quality/typoscript-lint.yml --ansi Configuration/TypoScript',
             $scripts['lint:typoscript'],
@@ -362,6 +386,22 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncAddsMissingAllowPluginsConfig(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false, false);
+        chdir($this->root);
+
+        $output = $this->sync();
+
+        self::assertStringContainsString('added config allow-plugins.dealerdirect/phpcodesniffer-composer-installer', $output);
+        $data = json_decode((string) file_get_contents($this->root . '/composer.json'), true);
+        self::assertSame(true, $data['config']['allow-plugins']['dealerdirect/phpcodesniffer-composer-installer']);
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
      * @throws Exception
      * @throws ExpectationFailedException
      */
@@ -393,6 +433,34 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
+    public function testSyncAddsPhpScriptsWhenEitherShimExists(): void
+    {
+        $this->writePhpcsShim();
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        chdir($this->root);
+
+        $this->sync();
+        $scripts = $this->composerScripts();
+        self::assertSame('php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php lint', $scripts['lint:php']);
+        self::assertSame('php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php fix', $scripts['fix:php']);
+        self::assertContains('@lint:php', $scripts['lint:all']);
+        self::assertContains('@fix:php', $scripts['fix:all']);
+
+        /*
+         * Adding the PHP-CS-Fixer shim keeps the scripts unchanged - both
+         * tools run behind the same lint:php/fix:php pair.
+         */
+        $this->writeCsFixerShim();
+        $before = file_get_contents($this->root . '/composer.json');
+        $this->sync();
+        self::assertSame($before, file_get_contents($this->root . '/composer.json'));
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
      * @param list<string> $suites
      * @throws Exception
      * @throws ExpectationFailedException
@@ -408,6 +476,7 @@ final class ApplicationTest extends TestCase
                 file_put_contents($this->root . '/Tests/' . $suite . '/Nested/ExampleTest.php', '<?php');
             }
         }
+
         chdir($this->root);
         $this->sync();
         $scripts = $this->composerScripts();
@@ -428,6 +497,7 @@ final class ApplicationTest extends TestCase
                     $members[] = $member;
                 }
             }
+
             self::assertSame(array_merge($members, ['@test:local', '@test:docker']), $scripts['test:all']);
             self::assertContains('@test:all', $scripts['qa']);
         }
@@ -631,6 +701,36 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('missing: @audit:composer', $output);
         self::assertStringContainsString("extra: composer audit --abandoned=report || echo 'Warning: audit reported findings'", $output);
         self::assertStringContainsString('@lint:yaml', $output);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncKeepsDisabledAllowPluginsAndCheckFails(): void
+    {
+        $data = [
+            'config'  => ['allow-plugins' => ['dealerdirect/phpcodesniffer-composer-installer' => false]],
+            'name'    => 'fixture-extension',
+            'scripts' => self::MINIMAL_SCRIPTS,
+        ];
+        file_put_contents(
+            $this->root . '/composer.json',
+            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+        );
+        chdir($this->root);
+
+        $output = $this->sync();
+
+        self::assertStringContainsString('hint: allow-plugins.dealerdirect/phpcodesniffer-composer-installer is false, the shared tooling requires true', $output);
+        $data = json_decode((string) file_get_contents($this->root . '/composer.json'), true);
+        self::assertSame(false, $data['config']['allow-plugins']['dealerdirect/phpcodesniffer-composer-installer']);
+
+        $before = (string) file_get_contents($this->root . '/composer.json');
+        $this->sync();
+        self::assertSame($before, (string) file_get_contents($this->root . '/composer.json'));
+        [$exit, $output] = $this->check();
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: allow-plugins.dealerdirect/phpcodesniffer-composer-installer missing or not true (run qa sync and commit)', $output);
     }
 
     /** @throws ExpectationFailedException */
@@ -875,6 +975,7 @@ final class ApplicationTest extends TestCase
         if (!is_dir($path)) {
             return;
         }
+
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST,
@@ -884,6 +985,7 @@ final class ApplicationTest extends TestCase
             $itemPath = $item->getPathname();
             is_link($itemPath) ? unlink($itemPath) : ($item->isDir() ? rmdir($itemPath) : unlink($itemPath));
         }
+
         rmdir($path);
     }
 
@@ -896,6 +998,22 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, Application::execute(['qa', 'sync']));
 
         return (string) ob_get_clean();
+    }
+
+    /**
+     * @param array<string, string|list<string>> $scripts
+     */
+    private function writeComposerJson(array $scripts): void
+    {
+        $data = [
+            'config'  => ['allow-plugins' => ['dealerdirect/phpcodesniffer-composer-installer' => true]],
+            'name'    => 'fixture-extension',
+            'scripts' => $scripts,
+        ];
+        file_put_contents(
+            $this->root . '/composer.json',
+            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+        );
     }
 
     private function writeConfiguration(): void
@@ -928,16 +1046,30 @@ final class ApplicationTest extends TestCase
         );
     }
 
+    private function writePhpcsShim(): void
+    {
+        $qualityDir = $this->root . '/Build/Quality';
+
+        if (!is_dir($qualityDir)) {
+            mkdir($qualityDir, 0755, true);
+        }
+
+        file_put_contents($qualityDir . '/.phpcs.xml.dist', '<?xml version="1.0"?>\n<ruleset name="fixture">\n</ruleset>\n');
+    }
+
     /**
      * @param array<string, string|list<string>> $scripts
      */
-    private function writeRepositoryFixtures(array $scripts = self::BASE_SCRIPTS, bool $withXlf = true, bool $withPhpstan = true): void
+    private function writeRepositoryFixtures(array $scripts = self::BASE_SCRIPTS, bool $withXlf = true, bool $withPhpstan = true, bool $withAllowPlugins = true): void
     {
-        $data = ['name' => 'fixture-extension', 'scripts' => $scripts];
-        file_put_contents(
-            $this->root . '/composer.json',
-            json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
-        );
+        if ($withAllowPlugins) {
+            $this->writeComposerJson($scripts);
+        } else {
+            file_put_contents(
+                $this->root . '/composer.json',
+                json_encode(['name' => 'fixture-extension', 'scripts' => $scripts], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+            );
+        }
 
         if ($withXlf) {
             $languageDir = $this->root . '/Resources/Private/Language';

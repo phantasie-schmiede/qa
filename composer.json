@@ -6,6 +6,8 @@
     "require": {
         "php": "^8.3",
         "friendsofphp/php-cs-fixer": "^3.95",
+        "slevomat/coding-standard": "^8.31",
+        "squizlabs/php_codesniffer": "^4.0.4",
         "symfony/process": "^6.4 || ^7.0 || ^8.0"
     },
     "require-dev": {
@@ -28,6 +30,7 @@
     ],
     "config": {
         "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
             "ergebnis/composer-normalize": true,
             "typo3/class-alias-loader": true,
             "typo3/cms-composer-installers": true
@@ -37,9 +40,9 @@
     "scripts": {
         "analyze:php": "phpstan analyse --no-progress",
         "fix:composer": "composer normalize",
-        "fix:php": "php-cs-fixer fix",
+        "fix:php": "php Resources/Quality/phpTools.php fix",
         "lint:composer": "composer normalize --dry-run --diff --no-check-lock --no-update-lock",
-        "lint:php": "php-cs-fixer fix --dry-run --diff",
+        "lint:php": "php Resources/Quality/phpTools.php lint",
         "test": "phpunit -c tests/phpunit.xml.dist"
     }
 }

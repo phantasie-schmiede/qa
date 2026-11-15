@@ -231,3 +231,29 @@ directives that are not prose stay as they are - the `// t3:13` /
 `// t3:14` core-major markers, the `// PSBits/...` directive comments,
 single-word notes like `// deprecated`.
 AI-side only - no tool enforces comment grammar.
+
+### 15. One blank line around block control structures
+
+A block control structure - `if` (with its `elseif` / `else` arms),
+`do`, `while`, `for`, `foreach`, `switch`, `case`, `default` and `try`
+(with its `catch` / `finally` blocks) - stands apart from the
+statements around it: exactly one blank line before it and exactly one
+blank line after it, except at the edges of its scope (the first
+statement of a method, constructor or block needs no blank line before,
+the last one none after). The arms of one structure stay together -
+no blank line between `if` / `elseif` / `else` or between `try` /
+`catch` / `finally` (they are a single structure), and inside a
+`switch` each `case` / `default` block is separated from the next by
+exactly one blank line, including after a closing jump statement
+(`break`, `continue`, `return`). Standalone comment lines keep their
+position; the blank line counts the lines between the structures, not
+the comments.
+Tooling: PHP_CodeSniffer with the
+`SlevomatCodingStandard.ControlStructures.BlockControlStructureSpacing`
+rule in its default configuration (shared ruleset
+`Resources/Quality/phpcs.xml`, repository shim
+`Build/Quality/.phpcs.xml.dist`); the rule runs behind `composer
+lint:php` (report) and `composer fix:php` (fix) via the shared phpTools
+runner - in fix mode the PHP_CodeSniffer autofix runs before the
+PHP-CS-Fixer run, and the fixer adjusts the blank lines only
+(indentation and the other formatting stay with the PHP-CS-Fixer run).

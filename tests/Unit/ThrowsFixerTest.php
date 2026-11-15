@@ -49,6 +49,7 @@ final class ThrowsFixerTest extends TestCase
         if (is_dir($this->root . '/repo/.Build/throws-fix')) {
             self::assertSame([], array_values(array_diff(scandir($this->root . '/repo/.Build/throws-fix'), ['.', '..'])));
         }
+
         $this->removeTree($this->root);
         putenv('PATH=' . $this->oldPath);
     }
@@ -89,6 +90,7 @@ final class ThrowsFixerTest extends TestCase
             self::assertStringContainsString('no phpstan JSON', $exception->getMessage());
             self::assertStringContainsString('no staged response', $exception->getMessage());
         }
+
         self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
     }
 
@@ -337,6 +339,7 @@ final class ThrowsFixerTest extends TestCase
             self::assertFalse($environment['manifest']['repositories'][1]['options']['symlink']);
             self::assertDirectoryDoesNotExist($environment['root']);
         }
+
         self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
     }
 
@@ -445,6 +448,7 @@ final class ThrowsFixerTest extends TestCase
         } catch (RuntimeException $exception) {
             self::assertStringContainsString('phpstan failed', $exception->getMessage());
         }
+
         self::assertSame($before, file_get_contents($root . '/src/Service.php'));
         self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
     }

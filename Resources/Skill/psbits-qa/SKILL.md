@@ -13,8 +13,10 @@ have it):
 1. `composer validate --no-check-publish`
 2. `php -l` for every changed PHP file
 3. `composer analyze:php` (PHPStan) - **never skip**, even for docblock-only changes
-4. `composer lint:php -- <changed files>` (or php-cs-fixer dry-run with
-   `--path-mode=intersection` on the package config, see below)
+4. `composer lint:php -- <changed files>` (the shared phpTools runner:
+   the PHP-CS-Fixer dry-run plus PHP_CodeSniffer with the Slevomat
+   control-structure spacing rule; a CLI path replaces the configured
+   scope of both tools)
 5. `composer lint:yaml` (or `yamllint`) for changed YAML files
 6. `composer test:unit` and `composer test:functional` when the repo defines them
 
@@ -26,8 +28,11 @@ The QA tooling lives in the `psbits/qa` package (installed into
 `.Build/vendor/psbits/qa/`), not in the repository:
 
 - Linter/fixer configuration: `.Build/vendor/psbits/qa/Resources/Quality/`
-  (cs-fixer config with the shared `PSBits/*` fixers, phpstan baseline,
-  prettier, yamllint, typoscript-lint, lint-class-attributes)
+  (cs-fixer config with the shared `PSBits/*` fixers, the `phpTools.php`
+  runner behind `lint:php`/`fix:php`, the PHP_CodeSniffer ruleset
+  `phpcs.xml` with the Slevomat control-structure spacing rule,
+  phpstan baseline, prettier, yamllint, typoscript-lint,
+  lint-class-attributes)
 - Test matrix scripts: `.Build/vendor/psbits/qa/Resources/Testing/Scripts/`
 - Docker setup: `.Build/vendor/psbits/qa/Resources/Testing/Docker/`
 - PHPUnit XMLs are **generated** into `.Build/phpunit/` (git-ignored) before
@@ -65,8 +70,18 @@ repository are added:
   the extension's test images using `buildTestImages.sh`)
 - `lint:composer` / `fix:composer` (always; the `ergebnis/composer-normalize`
   plugin normalizes the `composer.json` key order and formatting)
-- `lint:php` / `fix:php` (PHP-CS-Fixer, needs
-  `Build/Quality/.php-cs-fixer.dist.php`)
+- `lint:php` / `fix:php` (the shared phpTools runner: PHP-CS-Fixer and
+  PHP_CodeSniffer with the shared Slevomat control-structure spacing
+  ruleset; needs `Build/Quality/.php-cs-fixer.dist.php` and/or
+  `Build/Quality/.phpcs.xml.dist` - a missing tool is skipped, the CLI
+  paths are passed to every tool that runs, and `fix:php` runs the
+  PHP_CodeSniffer autofix before the PHP-CS-Fixer run; the
+  `dealerdirect/phpcodesniffer-composer-installer` plugin - required by
+  the Slevomat dependency - registers the standard with PHP_CodeSniffer
+  on every composer install/update, and `qa sync` keeps the matching
+  `config.allow-plugins` entry in the caller `composer.json` (added when
+  missing, reported without modification when explicitly disabled,
+  verified by `qa check`))
 - `lint:classes` / `fix:classes`, `lint:htmlxml` / `fix:htmlxml`,
   `lint:json` / `fix:json`, `lint:js`, `lint:scss` (npm proxies, need the
   matching npm script in the repository `package.json`; the json pair runs
@@ -107,8 +122,10 @@ scripts remain untouched; obsolete entries are not removed. The
   aggregate deviating from the expected standard is reported with the
   standard printed in the output - align it manually and commit. The
   standard order of `fix:all` is `fix:classes`, `fix:composer`, `fix:htmlxml`,
-  `fix:json`, `fix:throws`, `fix:xlf`, `fix:php` (the php-cs-fixer run last,
-  normalizing what the other fixers wrote); `lint:all` is alphabetical.
+  `fix:json`, `fix:throws`, `fix:xlf`, `fix:php` (the php-cs-fixer run
+  last, normalizing what the other fixers wrote - inside `fix:php` the
+  phpTools runner executes the PHP_CodeSniffer autofix before that
+  run); `lint:all` is alphabetical.
   Additional repository `fix:*` scripts run alphabetically before the final
   `fix:php`, after the other shared fixers.
 - `bin/qa check` enforces the same in the CI (missing scripts, missing
@@ -131,10 +148,16 @@ jobs) executes:
   conditionally declared `FakeLanguageServiceFactory` fixture is excluded
   via `excludePaths` (its `class.nonReadOnly` report is not ignorable)
 - `composer lint:composer`
-- `composer lint:php` - the root `.php-cs-fixer.php` calls
+- `composer lint:php` - the shared phpTools runner drives both PHP tools
+  in the self layout: the root `.php-cs-fixer.php` calls
   `CsFixerFactory::create(['src', 'tests', 'Resources'])`, i.e. the same
-  shared CGL configuration the extension repositories use; `bin/qa` is
-  PHPStan-analysed but not style-checked (no `.php` extension)
+  shared CGL configuration the extension repositories use, and the root
+  `.phpcs.xml.dist` references the shared ruleset
+  `Resources/Quality/phpcs.xml` and declares the scope `src`, `tests`,
+  `Resources`; the Slevomat standard is registered via the
+  `dealerdirect/phpcodesniffer-composer-installer` plugin (allowed in the
+  package `composer.json`); `bin/qa` is PHPStan-analysed but not
+  style-checked (no `.php` extension)
 
 ## Test matrix (repos with `test:local` / `test:docker`)
 
@@ -199,11 +222,16 @@ Only these QA files remain in the repository (everything else is shared):
 
 - `Build/Quality/phpstan.neon.dist` - thin shim: includes the package baseline and adds
   `paths` / `excludePaths` / `ignoreErrors` / the phpstan-typo3 extension include
+- `Build/Quality/.php-cs-fixer.dist.php` - thin shim: calls
+  `CsFixerFactory::create([...])` with the repository's analysis scope
+- `Build/Quality/.phpcs.xml.dist` - thin shim: references the shared
+  ruleset (`.Build/vendor/psbits/qa/Resources/Quality/phpcs.xml`) and
+  declares the analysis scope via `<file>` elements
 - `Build/Quality/coverage-baseline.json` - per-repo coverage baseline
 - `Build/Quality/.prettierignore` - where prettier is used (repo-relative ignore list)
-- `composer.json` - the `scripts` section is kept in sync by `bin/qa sync`
-  (shared scripts, `lint:all` / `fix:all` / `qa` aggregates); repo-specific
-  scripts (e.g. `test:unit:update-fixtures`) are never touched
+- `composer.json` - the `scripts` section and the `config.allow-plugins`
+  entries of the shared tooling are kept in sync by `bin/qa sync`;
+  repo-specific scripts (e.g. `test:unit:update-fixtures`) are never touched
 - `.opencode/skills/psbits-qa`, `.opencode/skills/psbits-cgl`,
   `.opencode/skills/psbits-foundation` and
   `.opencode/skills/psbits-v14-compat` - symlinks into the package (created

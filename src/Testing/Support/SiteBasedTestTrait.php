@@ -111,6 +111,7 @@ trait SiteBasedTestTrait
 
                 continue;
             }
+
             $yaml .= $prefix . ' ' . $this->dumpYamlScalar($value) . "\n";
         }
 
