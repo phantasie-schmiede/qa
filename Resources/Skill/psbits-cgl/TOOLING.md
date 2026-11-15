@@ -25,14 +25,9 @@ not in the repository (see the `psbits-qa` skill for the layout).
   runner: the PHP_CodeSniffer autofix for the Slevomat
   control-structure spacing rule - it adjusts the blank lines around
   block control structures only, no indentation - followed by the
-  php-cs-fixer run; its `phpdoc_order` sorts the docblock tags, its
-  `phpdoc_order_by_value` keeps the `@throws` lines sorted by
-  exception name and the `@method`, `@property`, `@property-read`,
-  `@property-write` and `@mixin` lines sorted by their value, its
-  `phpdoc_separation` drops the blank lines between any tags, its
-  `PSBits/empty_comments` drops the stray blank star lines and the
-  empty docblock shells, and its `PSBits/function_imports` converts any
-  backslash-prefixed global function call into a `use function` import).
+  php-cs-fixer run, which normalizes the docblock and import layout the
+  other fixers wrote; what its fixers do is documented in `SKILL.md`,
+  2, 7, 8 and 13, and the Slevomat rule in 15).
 - `composer fix:throws` / `composer lint:xlf` / `composer fix:xlf` - the
   individual commands (`.Build/bin/qa throws-fix|check|fix`).
 - After `fix:all`, always run `lint:all` and the test suites; a green
@@ -59,25 +54,31 @@ linters would fight forever.
 `composer fix:throws` (`.Build/bin/qa throws-fix`) rewrites the
 `@throws` docblocks against the full matrix of supported TYPO3 core
 majors (the `typo3/cms-core` constraint in the repository's
-composer.json). For every matrix entry it switches the installed core
-(`composer update --with typo3/cms-core:^N.M -W`; the switch is a
-no-op when the installed major already matches) and runs the PHPStan
-analysis (with the `psbits.throwsDocblockAudit` rule) in an additive
-loop until the docblocks carry the core's thrown set - fixing a callee
-changes what its callers have to declare, so the fix cascades; the
-loop aborts with a message after 25 rounds per core. A cross
-validation over all cores follows, with a repair loop when the
+composer.json). Every matrix entry gets a disposable repository copy
+with its own Composer installation under
+`.Build/throws-fix/<run-id>/<core>` (dependencies resolved fresh with
+`--no-scripts`, the current QA code snapshotted into the copy) - the
+repository's normal `vendor/bin` and Composer files stay untouched, so
+no core switch and no restore step are needed. For every copy it runs
+the PHPStan analysis (with the `psbits.throwsDocblockAudit` rule) in
+an additive loop until the docblocks carry the core's thrown set -
+fixing a callee changes what its callers have to declare, so the fix
+cascades; the loop aborts with a message after 25 rounds per core. A
+cross validation over all cores follows, with a repair loop when the
 additions of one core changed the thrown set of another, and only when
 every core is clean does the final merge write each docblock exactly
 once: the union of the per-core sets, a `// t3:N` marker on the lines
 a single core sees, and the lines no core sees removed (see
 `SKILL.md`, 3).
 
-The starting core is restored when the run ends, whatever the
-outcome; an interrupted run leaves the docblocks in the additive
-state (nothing worse than the starting state) and surfaces the error.
-The happy path costs two composer switches (to the other major and
-back) plus their network traffic - run the command when
+Copies are refreshed after docblock edits; only copied source files
+can be mapped back to the originals, relative path repositories are
+mirrored, and source symlinks or external autoload paths are rejected
+(custom bootstraps must work in the copy - this is not an OS security
+sandbox). Do not edit source concurrently. Cleanup runs on completion
+and on exceptions; a forced termination may leave disposable files
+behind, but never a changed normal installation. The happy path costs
+one composer resolution per matrix entry - run the command when
 `@throws`-relevant code changed, not on every save.
 
 The tooling writes the short name and adds the missing `use` statement
