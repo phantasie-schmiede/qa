@@ -19,6 +19,84 @@ final class EmptyCommentsFixerTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
+    public function testCollapsesConsecutiveBlankStarLinesInADocblock(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testCollapsesConsecutiveBlankStarLinesWithWindowsLineEndings(): void
+    {
+        $code = str_replace("\n", "\r\n", <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php);
+
+        self::assertSame(str_replace("\n", "\r\n", <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php), $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testDropsALeadingBlankStarLine(): void
     {
         $code = <<<'php'
@@ -112,6 +190,30 @@ final class EmptyCommentsFixerTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
+    public function testKeepsASingleBlankStarLineInADocblock(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 *
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testKeepsBlockCommentWithContent(): void
     {
         $code = <<<'php'
@@ -184,6 +286,120 @@ final class EmptyCommentsFixerTest extends TestCase
             php;
 
         self::assertSame($code, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testNormalizingBlankLinesIsIdempotent(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            /*
+             * First paragraph.
+
+
+             * Second paragraph.
+             */
+            php;
+        $fixer = new EmptyCommentsFixer();
+        $once  = $this->fix($fixer, $code);
+
+        self::assertSame($once, $this->fix($fixer, $once));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testReducesMixedBlankLinesToASingleBlankStarLine(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            /*
+             * First paragraph.
+             *
+
+             * Second paragraph.
+             */
+            foo();
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            /*
+             * First paragraph.
+             *
+             * Second paragraph.
+             */
+            foo();
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testRemovesABlankLineWithoutStarPrefixInABlockComment(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            /*
+             * First paragraph.
+
+             * Second paragraph.
+             */
+            foo();
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            /*
+             * First paragraph.
+             * Second paragraph.
+             */
+            foo();
+            php, $this->fix(new EmptyCommentsFixer(), $code));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testRemovesABlankLineWithoutStarPrefixInADocblock(): void
+    {
+        $code = <<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php;
+
+        self::assertSame(<<<'php'
+            <?php
+
+            final class Service
+            {
+                /**
+                 * Does work.
+                 * @throws \InvalidArgumentException
+                 */
+                public function run(): void
+                {
+                }
+            }
+            php, $this->fix(new EmptyCommentsFixer(), $code));
     }
 
     /**

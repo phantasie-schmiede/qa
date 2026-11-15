@@ -39,6 +39,10 @@ use const T_WHITESPACE;
  * Removes comments that carry no content: empty docblocks, empty block
  * comments and single-line comments without text (// or #).
  *
+ * The blank lines inside a block comment or docblock are normalized:
+ * a line that carries nothing but whitespace is dropped, and runs of
+ * consecutive blank star lines are reduced to a single blank line.
+ *
  * The empty docblocks are mainly left behind by the no_superfluous_phpdoc_tags
  * fixer, which drops the redundant tags but keeps the docblock shell.
  *
@@ -49,8 +53,8 @@ use const T_WHITESPACE;
  *
  * The fixer works on the token list: docblocks are T_DOC_COMMENT tokens,
  * every other comment style is a T_COMMENT token, and each comment
- * carries its full text as content, so the emptiness check is plain
- * string handling.
+ * carries its full text as content, so the normalizations and the
+ * emptiness check are plain string handling.
  */
 final class EmptyCommentsFixer extends AbstractFixer
 {
@@ -79,6 +83,43 @@ final class EmptyCommentsFixer extends AbstractFixer
         }
 
         return true;
+    }
+
+    /**
+     * Normalizes the blank lines inside a block comment or docblock.
+     *
+     * Lines that carry nothing but whitespace are dropped; runs of
+     * consecutive blank star lines are reduced to a single blank line,
+     * the line that survives a run keeps the form of the first line of
+     * the run.
+     */
+    private static function normalizeBlankLines(string $content): string
+    {
+        $lines = explode("\n", $content);
+
+        if (2 > count($lines)) {
+            return $content;
+        }
+
+        $result      = [];
+        $starBlanked = false;
+
+        foreach ($lines as $line) {
+            if (1 === preg_match('/^[ \t]*\r?$/', $line)) {
+                continue;
+            }
+
+            $starBlank = 1 === preg_match('/^[ \t]*\*[ \t]*\r?$/', $line);
+
+            if (true === $starBlanked && true === $starBlank) {
+                continue;
+            }
+
+            $result[]    = $line;
+            $starBlanked = $starBlank;
+        }
+
+        return implode("\n", $result);
     }
 
     /**
@@ -123,7 +164,7 @@ final class EmptyCommentsFixer extends AbstractFixer
     public function getDefinition(): FixerDefinitionInterface
     {
         return new FixerDefinition(
-            'Removes empty comments and docblocks without content and drops the blank star lines at the top and bottom of docblocks.',
+            'Removes empty comments and docblocks without content, drops the blank star lines at the top and bottom of docblocks, drops the blank lines without a star prefix inside block comments and docblocks and reduces runs of consecutive blank star lines to a single blank line.',
             [
                 new CodeSample(
                     <<<'PHP'
@@ -147,6 +188,38 @@ final class EmptyCommentsFixer extends AbstractFixer
                         class Demo
                         {
                             /**
+                             *
+                             * @throws \RuntimeException
+                             */
+                            public function run(): void
+                            {
+                            }
+                        }
+
+                        PHP
+                ),
+                new CodeSample(
+                    <<<'PHP'
+                        <?php
+
+                        /*
+                         * First paragraph.
+
+
+                         * Second paragraph.
+                         */
+
+                        PHP
+                ),
+                new CodeSample(
+                    <<<'PHP'
+                        <?php
+
+                        class Demo
+                        {
+                            /**
+                             * Does work.
+                             *
                              *
                              * @throws \RuntimeException
                              */
@@ -198,16 +271,22 @@ final class EmptyCommentsFixer extends AbstractFixer
                 continue;
             }
 
-            if ($token->isGivenKind(T_DOC_COMMENT)) {
-                $trimmed = self::trimBlankStarLines($token->getContent());
+            $content = $token->getContent();
 
-                if ($trimmed !== $token->getContent()) {
-                    $tokens[$index] = new Token([T_DOC_COMMENT, $trimmed]);
-                    $token          = $tokens[$index];
+            if (str_starts_with($content, '/*')) {
+                $normalized = self::normalizeBlankLines($content);
+
+                if ($token->isGivenKind(T_DOC_COMMENT)) {
+                    $normalized = self::trimBlankStarLines($normalized);
+                }
+
+                if ($normalized !== $content) {
+                    $tokens[$index] = new Token([$token->getId(), $normalized]);
+                    $content        = $normalized;
                 }
             }
 
-            if (!self::isEmpty($token->getContent())) {
+            if (!self::isEmpty($content)) {
                 continue;
             }
 

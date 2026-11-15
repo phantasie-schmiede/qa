@@ -26,7 +26,10 @@ Tooling: `PSBits/block_comments` (php-cs-fixer).
 No empty docblocks, no empty block comments, no bare `//` or `#` lines
 - including the empty shells `no_superfluous_phpdoc_tags` leaves behind
 when it drops the only tags of a docblock (see 4): the shell goes with
-the tags.
+the tags. The blank lines inside a block comment or docblock follow the
+star style: a line that carries nothing but whitespace is dropped, and
+runs of consecutive blank star lines are reduced to a single blank line
+(the surviving line keeps the form of the first line of the run).
 Tooling: `PSBits/empty_comments` (php-cs-fixer).
 
 ### 3. `@throws` documents every supported core major
