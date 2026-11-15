@@ -26,7 +26,10 @@ Tooling: `PSBits/block_comments` (php-cs-fixer).
 No empty docblocks, no empty block comments, no bare `//` or `#` lines
 - including the empty shells `no_superfluous_phpdoc_tags` leaves behind
 when it drops the only tags of a docblock (see 4): the shell goes with
-the tags.
+the tags. The blank lines inside a block comment or docblock follow the
+star style: a line that carries nothing but whitespace is dropped, and
+runs of consecutive blank star lines are reduced to a single blank line
+(the surviving line keeps the form of the first line of the run).
 Tooling: `PSBits/empty_comments` (php-cs-fixer).
 
 ### 3. `@throws` documents every supported core major
@@ -73,9 +76,12 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
   case-insensitively.
 - **Array keys**: in every array literal whose keys are string
   literals, the keys are sorted case-insensitively. Tooling:
-  `PSBits/alphabetical_array_keys` (php-cs-fixer). Arrays with dynamic
-  keys or side-effect-carrying values are left alone by the tooling -
-  do not reorder them by hand either. Two per-array exceptions are
+   `PSBits/alphabetical_array_keys` (php-cs-fixer, risky because insertion
+   order is observable). Arrays with dynamic keys or side-effect-carrying
+   values (including property reads and calls inside nested arrays) are
+   left alone by the tooling - do not reorder them by hand either.
+   Escaped and integer-like string keys are conservatively skipped, as
+   are duplicate keys. Two per-array exceptions are
   declared with a directive in a comment between the opening bracket
   and the first item (the directive applies to the marked array only,
   nested arrays keep the default):
@@ -90,7 +96,10 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
     evaluable literal (numbers, strings, true, false, null, nested
     literal arrays). The order is the natural value order (null,
     false, true, numbers, strings, arrays; strings
-    case-insensitive); equal values fall back to the key order.
+     case-insensitive); equal values fall back to the key order.
+     Escaped strings and numeric spellings other than plain decimal
+     literals (e.g. hexadecimal, octal or digit separators) are skipped
+     rather than evaluated by casting their source text.
 - **JSON keys**: same order as array keys (JSON that lives in PHP files
   is an array; in standalone `.json` files apply the rule when writing)
   - with two tool-managed exceptions: `composer.json` follows the
@@ -99,10 +108,10 @@ Tooling: `no_superfluous_phpdoc_tags` (php-cs-fixer).
   Prettier format (2-space indentation, the key order as generated).
 - **XLIFF `trans-unit` and `group` ids**: within each `<body>` the
   `<trans-unit>` and `<group>` elements are sorted by their `id`
-  attribute (case-insensitive); the `<trans-unit>` elements inside a
-  `<group>` are sorted the same way (groups may be nested). Tooling:
-  `composer lint:xlf` / `composer fix:xlf`; the check is part of
-  `lint:all`.
+  attribute (case-insensitive, numbers compared naturally); the
+  `<trans-unit>` elements inside a `<group>` are sorted the same
+  way (groups may be nested). Tooling: `composer lint:xlf` /
+  `composer fix:xlf`; the check is part of `lint:all`.
 
 ### 6. Constants are always typed
 
@@ -214,3 +223,40 @@ Tooling: `composer fix:throws` rewrites the docblocks to this layout,
 value-sorted lines) and `phpdoc_separation` (php-cs-fixer) enforce it
 in `lint:php` / `fix:php`, and `PSBits/empty_comments` drops the stray
 blank star lines and the empty shells they leave behind.
+
+### 14. Comments are complete English sentences
+
+Prose in comments and docblock descriptions is written in complete
+sentences with correct spelling and grammar, in English: the first letter
+is capitalized and the sentence carries its end punctuation (`.` by
+default, `!` or `?` where the content calls for it). Markers and
+directives that are not prose stay as they are - the `// t3:13` /
+`// t3:14` core-major markers, the `// PSBits/...` directive comments,
+single-word notes like `// deprecated`.
+AI-side only - no tool enforces comment grammar.
+
+### 15. One blank line around block control structures
+
+A block control structure - `if` (with its `elseif` / `else` arms),
+`do`, `while`, `for`, `foreach`, `switch`, `case`, `default` and `try`
+(with its `catch` / `finally` blocks) - stands apart from the
+statements around it: exactly one blank line before it and exactly one
+blank line after it, except at the edges of its scope (the first
+statement of a method, constructor or block needs no blank line before,
+the last one none after). The arms of one structure stay together -
+no blank line between `if` / `elseif` / `else` or between `try` /
+`catch` / `finally` (they are a single structure), and inside a
+`switch` each `case` / `default` block is separated from the next by
+exactly one blank line, including after a closing jump statement
+(`break`, `continue`, `return`). Standalone comment lines keep their
+position; the blank line counts the lines between the structures, not
+the comments.
+Tooling: PHP_CodeSniffer with the
+`SlevomatCodingStandard.ControlStructures.BlockControlStructureSpacing`
+rule in its default configuration (shared ruleset
+`Resources/Quality/phpcs.xml`, repository shim
+`Build/Quality/.phpcs.xml.dist`); the rule runs behind `composer
+lint:php` (report) and `composer fix:php` (fix) via the shared phpTools
+runner - in fix mode the PHP_CodeSniffer autofix runs before the
+PHP-CS-Fixer run, and the fixer adjusts the blank lines only
+(indentation and the other formatting stay with the PHP-CS-Fixer run).

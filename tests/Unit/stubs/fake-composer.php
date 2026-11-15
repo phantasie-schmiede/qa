@@ -3,6 +3,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 /**
  * Fake composer binary for the ThrowsFixerTest orchestration tests: logs
  * every invocation, switches the installed typo3/cms-core version in
@@ -11,11 +18,15 @@ declare(strict_types=1);
  * directory is the fixture repository root.
  */
 $root  = getcwd();
-$state = $root . '/.state';
+$state = dirname(__DIR__);
 
 $call = is_file($state . '/composer-calls') ? (int) file_get_contents($state . '/composer-calls') : 0;
 file_put_contents($state . '/composer-calls', (string) ($call + 1));
 file_put_contents($state . '/composer.log', json_encode($argv) . "\n", FILE_APPEND);
+
+if (is_file($state . '/large-stderr')) {
+    fwrite(STDERR, str_repeat('composer diagnostic ', 65536));
+}
 
 $failCalls = array_map(
     'intval',
@@ -29,7 +40,8 @@ if (in_array($call + 1, $failCalls, true)) {
 }
 
 $arguments = $argv;
-$version   = '';
+$manifest  = json_decode(file_get_contents($root . '/composer.json'), true);
+$version   = $manifest['require']['typo3/cms-core'];
 
 for ($i = 1; $i + 1 < count($arguments); ++$i) {
     if ('--with' !== $arguments[$i]) {
@@ -47,10 +59,20 @@ for ($i = 1; $i + 1 < count($arguments); ++$i) {
     }
 }
 
+if (str_starts_with($version, '^13')) {
+    $version = '13.4.20';
+} elseif (str_starts_with($version, '^14')) {
+    $version = '14.3.10';
+}
+
 if ('' === $version) {
     fwrite(STDERR, 'unexpected composer arguments: ' . implode(' ', $arguments) . "\n");
 
     exit(1);
+}
+
+if (is_file($state . '/wrong-restore') && !str_contains(implode(' ', $arguments), 'typo3/cms-core:^')) {
+    $version = '13.4.20';
 }
 
 /*
@@ -68,3 +90,8 @@ file_put_contents($root . '/.Build/vendor/composer/installed.json', json_encode(
         ['name' => 'typo3/cms-core', 'version' => $version],
     ],
 ], JSON_PRETTY_PRINT));
+mkdir($root . '/.Build/bin', 0755, true);
+copy($state . '/fake-phpstan.php', $root . '/.Build/bin/phpstan');
+chmod($root . '/.Build/bin/phpstan', 0755);
+file_put_contents($root . '/.Build/bin/test-state', $state);
+file_put_contents($state . '/manifests.log', json_encode(['manifest' => $manifest, 'root' => $root]) . "\n", FILE_APPEND);

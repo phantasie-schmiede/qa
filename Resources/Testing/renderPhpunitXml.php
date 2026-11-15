@@ -3,6 +3,13 @@
 declare(strict_types=1);
 
 /*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
+/*
  * Renders the phpunit suite configurations into <repo>/.Build/phpunit/
  * (git-ignored) with absolute paths, because the committed XMLs would
  * resolve their relative bootstrap/cache/testsuite paths against the
@@ -37,6 +44,7 @@ if ('unit' === $mode || 'all' === $mode) {
 
             exit(1);
         }
+
         writeXml($root, 'unit', $bootstrapUnit);
         $written++;
     }
@@ -49,6 +57,7 @@ if ('functional' === $mode || 'all' === $mode) {
 
             exit(1);
         }
+
         writeXml($root, 'functional', $bootstrapFunctional);
         $written++;
     }
@@ -92,6 +101,7 @@ function writeXml(string $root, string $suite, string $bootstrap): void
             . '            name="error_reporting"' . "\n"
             . '            value="-1" />' . "\n";
     }
+
     $phpBlock .= '        <env' . "\n"
         . '            name="TYPO3_CONTEXT"' . "\n"
         . '            value="Testing" />' . "\n";
@@ -106,6 +116,7 @@ function writeXml(string $root, string $suite, string $bootstrap): void
             . '            name="typo3DatabaseDriver"' . "\n"
             . '            value="pdo_sqlite" />' . "\n";
     }
+
     $phpBlock .= '    </php>' . "\n";
 
     $xml = '<?xml version="1.0" encoding="UTF-8" ?>' . "\n"
@@ -153,6 +164,7 @@ function writeXml(string $root, string $suite, string $bootstrap): void
 
         exit(1);
     }
+
     file_put_contents($dir . '/' . $name . 'Tests.xml', $xml);
     echo "rendered {$name}Tests.xml\n";
 }

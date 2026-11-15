@@ -60,23 +60,17 @@ against both core versions.
 ## `@throws` divergence between core majors
 
 A version-gated code path can throw different exceptions on the
-different core majors. The CGL `@throws` rule therefore checks a
-superset, not equality: the docblock of a method or function must
-document every exception thrown on any supported major, and surplus
-lines are tolerated. `composer fix:throws` converges the docblocks
-against the full major matrix (switching the installed core per
-matrix entry), writes a trailing `// t3:13` / `// t3:14` marker on
-the lines a single major sees, and drops the lines no major sees. The
-markers are documentation, not code: the analysers ignore them (CGL
-skill, 3; the mechanics live in its tooling file). The shared
-baseline ignores PHPStan's built-in `throws.notThrowable` check (it
-validates the combined `@throws` type against the installed core only
-and would report a single-major line naming a class the other core
-provides); the marker-aware `psbits.throwsThrowable` rule takes its
-place: a `@throws` type is valid when it is a Throwable subtype, or
-when every class the installed core does not provide is covered by a
-`// t3:N` marker naming a different major. The installed major is read
-from `.Build/vendor/composer/installed.json`; when it cannot be
+different core majors - which is why the CGL `@throws` rule documents
+a superset of all majors instead of the exceptions of the installed
+core. The full rule (union semantics, `// t3:N` marker syntax) lives
+in the `psbits-cgl` skill, rule 3, and the `fix:throws` mechanics in
+its tooling file. What is specific to dual compatibility here: the
+shared baseline ignores PHPStan's built-in `throws.notThrowable`
+check (it validates the combined `@throws` type against the installed
+core only and would report a single-major line naming a class the
+other core provides); the marker-aware `psbits.throwsThrowable` rule
+takes its place and reads the installed major from
+`.Build/vendor/composer/installed.json` - when it cannot be
 determined, every marker is tolerated. A resolvable non-Throwable, an
 unmarked missing class, and a marker for the installed major itself
 are still errors.

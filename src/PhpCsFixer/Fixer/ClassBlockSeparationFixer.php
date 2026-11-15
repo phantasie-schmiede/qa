@@ -266,6 +266,7 @@ final class ClassBlockSeparationFixer extends AbstractFixer implements Configura
         if ('method' === $currentType && $previousIsHeader) {
             return 2;
         }
+
         // End of customization
 
         assert(isset($class['elements'][$elementIndex]));

@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<ruleset name="PSBits">
+    <description>Shared PSBits PHP_CodeSniffer ruleset: one blank line around block control structures, none at the edges of a scope (the Slevomat control-structure spacing rule with its default settings, if/elseif/else and try/catch/finally chains stay together).</description>
+
+    <arg name="extensions" value="php"/>
+
+    <rule ref="SlevomatCodingStandard.ControlStructures.BlockControlStructureSpacing"/>
+</ruleset>

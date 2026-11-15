@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<ruleset name="PSBits QA">
+    <description>Thin shim over the shared PSBits ruleset for linting this package itself.</description>
+
+    <rule ref="./Resources/Quality/phpcs.xml"/>
+
+    <file>src</file>
+    <file>tests</file>
+    <file>Resources</file>
+</ruleset>

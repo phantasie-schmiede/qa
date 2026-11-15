@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 use PhpCsFixer\Config;
 use PHPUnit\Framework\Exception;
 use PHPUnit\Framework\ExpectationFailedException;
@@ -52,6 +59,7 @@ final class CsFixerConfigTest extends TestCase
         foreach ($config->getFinder() as $file) {
             $files[] = $file->getRealPath();
         }
+
         sort($files);
         self::assertSame(
             [
@@ -78,6 +86,7 @@ final class CsFixerConfigTest extends TestCase
         foreach ($config->getFinder() as $file) {
             $files[] = $file->getRealPath();
         }
+
         self::assertContains($this->root . '/Classes/Classes.php', $files);
         self::assertCount(2, $files);
     }
@@ -174,6 +183,7 @@ final class CsFixerConfigTest extends TestCase
         foreach ($config->getFinder() as $file) {
             $files[] = $file->getRealPath();
         }
+
         sort($files);
         self::assertSame(
             [
@@ -193,6 +203,7 @@ final class CsFixerConfigTest extends TestCase
         if (!is_dir($path)) {
             return;
         }
+
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
             RecursiveIteratorIterator::CHILD_FIRST,
@@ -202,6 +213,7 @@ final class CsFixerConfigTest extends TestCase
             $itemPath = $item->getPathname();
             is_link($itemPath) ? unlink($itemPath) : ($item->isDir() ? rmdir($itemPath) : unlink($itemPath));
         }
+
         rmdir($path);
     }
 }

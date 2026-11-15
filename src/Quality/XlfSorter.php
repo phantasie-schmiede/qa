@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 namespace PSBits\Qa\Quality;
 
 use DirectoryIterator;
@@ -19,13 +26,14 @@ use function is_file;
 use function preg_match;
 use function sort;
 use function str_ends_with;
-use function strcasecmp;
+use function strnatcasecmp;
 use function trim;
 use function usort;
 
 /**
  * Keeps the <trans-unit> and <group> elements of XLIFF language files
- * sorted by their id attribute (case-insensitive) within each <body>.
+ * sorted by their id attribute within each <body> (case-insensitive,
+ * numbers compared naturally).
  *
  * A body is a list of items - trans-units and groups - sorted by their
  * id; the items of a group form the same kind of nested list, so groups
@@ -430,7 +438,7 @@ final class XlfSorter
             $units[]   = ['id' => $item->id, 'lines' => $this->renderItem($lines, $item, $nextStart)];
         }
 
-        usort($units, static fn(array $a, array $b): int => strcasecmp($a['id'], $b['id']));
+        usort($units, static fn(array $a, array $b): int => strnatcasecmp($a['id'], $b['id']));
 
         $region = array_slice($lines, $start, $items[0]->start - $start);
 

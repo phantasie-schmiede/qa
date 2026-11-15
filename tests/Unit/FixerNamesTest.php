@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 use PhpCsFixer\AbstractFixer;
 use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\GeneratorNotSupportedException;

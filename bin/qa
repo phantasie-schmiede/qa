@@ -3,10 +3,16 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 $autoloads = [
-    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../.Build/vendor/autoload.php',
     __DIR__ . '/../../../autoload.php',
-    __DIR__ . '/../autoload.php',
 ];
 foreach ($autoloads as $autoload) {
     if (file_exists($autoload)) {

@@ -46,8 +46,6 @@ use const T_DOC_COMMENT;
 use const T_DOUBLE_ARROW;
 use const T_LNUMBER;
 use const T_NS_SEPARATOR;
-use const T_NULLSAFE_OBJECT_OPERATOR;
-use const T_OBJECT_OPERATOR;
 use const T_PAAMAYIM_NEKUDOTAYIM;
 use const T_STRING;
 use const T_VARIABLE;
@@ -58,8 +56,10 @@ use const T_WHITESPACE;
  *
  * Only arrays where every key is a string literal are touched. Arrays with
  * integer keys, dynamic keys, spread items or values that may have side
- * effects (function or method calls, instantiation, ...) are left as they
- * are, so no evaluation order can ever change.
+ * effects (function or method calls, property reads, instantiation, ...)
+ * are left as they are. Escaped or integer-like string keys are skipped
+ * rather than compared by their source spelling. Reordering is still risky:
+ * PHP arrays preserve insertion order, which consumers may depend on.
  *
  * A comment between the opening bracket and the first item of an array
  * carries a directive for the fixer:
@@ -213,6 +213,11 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         return $tokens->isTokenKindFound(T_DOUBLE_ARROW);
     }
 
+    public function isRisky(): bool
+    {
+        return true;
+    }
+
     /**
      * Fixes at most one array per round: the [open, close] pairs of the
      * other arrays are stale after a rewrite, so they are re-collected
@@ -335,24 +340,44 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
                 return ['evaluable' => false, 'value' => null];
             }
 
+            if ($number !== $end) {
+                return ['evaluable' => false, 'value' => null];
+            }
+
+            $evaluation = $this->evaluateLiteralValue($tokens, $number, $number);
+
+            if (!$evaluation['evaluable']) {
+                return $evaluation;
+            }
+
             $sign  = '-' === $token->getContent() ? -1 : 1;
-            $value = $tokens[$number]->isGivenKind(T_DNUMBER)
-                ? (float) $tokens[$number]->getContent()
-                : (int) $tokens[$number]->getContent();
+            $value = $evaluation['value'];
 
             return ['evaluable' => true, 'value' => $sign * $value];
         }
 
         if ($start === $end) {
             if ($token->isGivenKind(T_LNUMBER)) {
+                if (!$this->isDecimalInteger($token->getContent())) {
+                    return ['evaluable' => false, 'value' => null];
+                }
+
                 return ['evaluable' => true, 'value' => (int) $token->getContent()];
             }
 
             if ($token->isGivenKind(T_DNUMBER)) {
+                if (str_contains($token->getContent(), '_') || 1 !== preg_match('/^[0-9.eE+\-]+$/', $token->getContent())) {
+                    return ['evaluable' => false, 'value' => null];
+                }
+
                 return ['evaluable' => true, 'value' => (float) $token->getContent()];
             }
 
             if ($this->isStringLiteralToken($tokens, $start)) {
+                if (str_contains($token->getContent(), '\\')) {
+                    return ['evaluable' => false, 'value' => null];
+                }
+
                 return ['evaluable' => true, 'value' => substr($token->getContent(), 1, -1)];
             }
 
@@ -606,7 +631,8 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
                     $newTokens[] = new Token([T_WHITESPACE, "\n" . $this->getLineIndent($tokens, $next['first'])]);
                 }
             } elseif ($index < count($sortedItems) - 1) {
-                $newTokens[] = new Token([T_WHITESPACE, ', ']);
+                $newTokens[] = new Token(',');
+                $newTokens[] = new Token([T_WHITESPACE, ' ']);
             }
         }
 
@@ -802,49 +828,13 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
     }
 
     /**
-     * Whether the token range after a variable is a pure read chain of
-     * ->name, ?->name or ::name parts; any other token (a call, ...)
-     * would be a side effect.
+     * Only plain decimal integers fitting PHP's integer range are cast
+     * directly; other source spellings need an actual PHP literal parser.
      */
-    private function isPropertyChain(Tokens $tokens, int $start, int $end): bool
+    private function isDecimalInteger(string $content): bool
     {
-        $i = $start + 1;
-
-        while (true) {
-            $i = $this->skipWhitespace($tokens, $i, $end, true);
-
-            if ($i > $end) {
-                return true;
-            }
-
-            $token = $tokens[$i];
-
-            if ($token->isGivenKind([T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR])) {
-                $name = $this->skipWhitespace($tokens, $i + 1, $end, true);
-
-                if ($name > $end || !$tokens[$name]->isGivenKind(T_STRING)) {
-                    return false;
-                }
-
-                $i = $name + 1;
-
-                continue;
-            }
-
-            if ($token->isGivenKind(T_PAAMAYIM_NEKUDOTAYIM)) {
-                $name = $this->skipWhitespace($tokens, $i + 1, $end, true);
-
-                if ($name > $end || !$tokens[$name]->isGivenKind([T_STRING, T_CLASS])) {
-                    return false;
-                }
-
-                $i = $name + 1;
-
-                continue;
-            }
-
-            return false;
-        }
+        return 1 === preg_match('/^(?:0|[1-9][0-9]*)$/', $content)
+            && (string) (int) $content === $content;
     }
 
     /**
@@ -902,11 +892,6 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
             return false;
         }
 
-        // variable with a property chain: $a->b, $this->x->y
-        if ($token->isGivenKind(T_VARIABLE)) {
-            return $this->isPropertyChain($tokens, $start, $end);
-        }
-
         // class constant or ::class fetch
         if ($token->isGivenKind([T_NS_SEPARATOR, T_STRING])) {
             return $this->isConstantFetch($tokens, $start, $end);
@@ -920,11 +905,8 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
                 return false;
             }
 
-            foreach ($this->getItems($tokens, $start, $close) ?? [] as $item) {
-                $arrow      = $tokens->getNextMeaningfulToken($item['first']);
-                $valueStart = null === $arrow ? null : $tokens->getNextMeaningfulToken($arrow);
-
-                if (null === $valueStart || !$this->isSideEffectFreeValue($tokens, $valueStart, $item['last'])) {
+            foreach ($this->findItemRanges($tokens, $start, $close) as [$first, $last]) {
+                if (null === $this->describeItem($tokens, $first, $last)) {
                     return false;
                 }
             }
@@ -957,10 +939,16 @@ final class AlphabeticalArrayKeysFixer extends AbstractFixer
         $token = $tokens[$index];
 
         if ($this->isStringLiteralToken($tokens, $index)) {
-            return substr($token->getContent(), 1, -1);
+            $key = substr($token->getContent(), 1, -1);
+
+            if (str_contains($key, '\\') || 1 === preg_match('/^-?(?:0|[1-9][0-9]*)$/', $key)) {
+                return null;
+            }
+
+            return $key;
         }
 
-        if (true === $values && $token->isGivenKind(T_LNUMBER)) {
+        if (true === $values && $token->isGivenKind(T_LNUMBER) && $this->isDecimalInteger($token->getContent())) {
             return (int) $token->getContent();
         }
 

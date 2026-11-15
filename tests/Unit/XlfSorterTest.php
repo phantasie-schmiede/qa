@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
 use PHPUnit\Framework\Exception;
 use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
@@ -110,6 +117,23 @@ final class XlfSorterTest extends TestCase
 
         self::assertSame(['changed' => [$file], 'skipped' => []], $sorter->apply([$file]));
         self::assertSame($this->template(['Alpha', 'mid', 'tab.example.label', 'zeta']) . "\n", file_get_contents($file));
+
+        // a second run changes nothing
+        self::assertSame(['changed' => [], 'skipped' => []], $sorter->apply([$file]));
+        self::assertSame(['problems' => [], 'unsorted' => []], $sorter->check([$file]));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     */
+    public function testApplySortsTransUnitIdsWithNumbersNaturally(): void
+    {
+        $file   = $this->xlfFile('Numeric.xlf', $this->template(['hints.10', 'hints.2', 'hints.1']));
+        $sorter = new XlfSorter();
+
+        self::assertSame(['changed' => [$file], 'skipped' => []], $sorter->apply([$file]));
+        self::assertSame($this->template(['hints.1', 'hints.2', 'hints.10']) . "\n", file_get_contents($file));
 
         // a second run changes nothing
         self::assertSame(['changed' => [], 'skipped' => []], $sorter->apply([$file]));
@@ -249,6 +273,16 @@ final class XlfSorterTest extends TestCase
     public function testCheckReportsUnsortedFile(): void
     {
         $file = $this->xlfFile('Unsorted.xlf', $this->template(['zeta', 'Alpha', 'tab.example.label', 'mid']));
+
+        self::assertSame(['problems' => [], 'unsorted' => [$file]], (new XlfSorter())->check([$file]));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testCheckReportsUnsortedNumericIds(): void
+    {
+        $file = $this->xlfFile('NumericUnsorted.xlf', $this->template(['hints.10', 'hints.2']));
 
         self::assertSame(['problems' => [], 'unsorted' => [$file]], (new XlfSorter())->check([$file]));
     }

@@ -10,6 +10,11 @@ includes:
     - Resources/Quality/phpstan.neon
 
 parameters:
+    bootstrapFiles:
+        # PHP_CodeSniffer has no composer autoload section; its own
+        # autoloader registers the classes the tests reference (Config,
+        # Ruleset, Util\Tokens, Exceptions\RuntimeException).
+        - .Build/vendor/squizlabs/php_codesniffer/autoload.php
     tmpDir: .Build/phpstan
     paths:
         - src

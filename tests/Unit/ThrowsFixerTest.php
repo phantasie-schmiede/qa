@@ -2,18 +2,27 @@
 
 declare(strict_types=1);
 
+/*
+ * This file is part of PSBits QA.
+ *
+ * For the full copyright and license information, please read the
+ * LICENSE.txt file that was distributed with this source code.
+ */
+
+use PHPUnit\Framework\Exception;
 use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use PSBits\Qa\PhpStan\ThrowsDocblockAuditRule;
 use PSBits\Qa\PhpStan\ThrowsDocblockRule;
 use PSBits\Qa\Quality\ThrowsFixer;
 use Random\RandomException;
-use RuntimeException;
-use ValueError;
 
 final class ThrowsFixerTest extends TestCase
 {
     private string $oldPath;
+
+    /** @var array<string, string> */
+    private array  $protectedFiles = [];
     private string $root;
 
     /**
@@ -28,10 +37,19 @@ final class ThrowsFixerTest extends TestCase
     }
 
     /**
+     * @throws ExpectationFailedException
      * @throws UnexpectedValueException
      */
     protected function tearDown(): void
     {
+        foreach ($this->protectedFiles as $file => $content) {
+            self::assertSame($content, file_get_contents($file), $file . ' must remain unchanged');
+        }
+
+        if (is_dir($this->root . '/repo/.Build/throws-fix')) {
+            self::assertSame([], array_values(array_diff(scandir($this->root . '/repo/.Build/throws-fix'), ['.', '..'])));
+        }
+
         $this->removeTree($this->root);
         putenv('PATH=' . $this->oldPath);
     }
@@ -52,6 +70,28 @@ final class ThrowsFixerTest extends TestCase
         foreach ($configurations as $configuration) {
             self::assertSame(true, str_ends_with($configuration, '.neon'));
         }
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RandomException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testAnalysisFailureLeavesDevelopmentInstallationUntouched(): void
+    {
+        $root = $this->fixtureRepo('^13.4 || ^14.3', '14.3.9', array_fill(0, 3, $this->audit('expected none, declared \\App\\Old')));
+        putenv('PATH=' . $root . '/.state/bin:' . $this->oldPath);
+
+        try {
+            (new ThrowsFixer($root))->run();
+            self::fail('expected analysis failure');
+        } catch (RuntimeException $exception) {
+            self::assertStringContainsString('no phpstan JSON', $exception->getMessage());
+            self::assertStringContainsString('no staged response', $exception->getMessage());
+        }
+
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
     }
 
     /**
@@ -168,18 +208,18 @@ final class ThrowsFixerTest extends TestCase
      * @throws RuntimeException
      * @throws ValueError
      */
-    public function testDualMajorRunSwitchesCoresAndMergesWithMarkers(): void
+    public function testDualMajorRunUsesIsolatedCoresAndMergesWithMarkers(): void
     {
-        $root = $this->fixtureRepo('^13.4 || ^14.3', '14.3.10', [
+        $root = $this->fixtureRepo('^14.3 || ^13.4', '14.3.10', [
             // the 14.3 fix loop (the installed major runs first)
             $this->audit('expected \App\NewError, declared \App\Old'),
             $this->audit('expected \App\NewError, \App\Other, declared \App\NewError, \App\Old'),
             $this->audit('expected \App\NewError, \App\Other, declared \App\NewError, \App\Old, \App\Other'),
             // the 13.4 fix loop (no missing lines: converged in round 0)
             $this->audit('expected \App\NewError, declared \App\NewError, \App\Old, \App\Other'),
-            // the cross validation over both cores (matrix order)
-            $this->audit('expected \App\NewError, declared \App\NewError, \App\Old, \App\Other'),
+            // the cross validation over both isolated cores (matrix order)
             $this->audit('expected \App\NewError, \App\Other, declared \App\NewError, \App\Old, \App\Other'),
+            $this->audit('expected \App\NewError, declared \App\NewError, \App\Old, \App\Other'),
         ]);
 
         putenv('PATH=' . $root . '/.state/bin:' . $this->oldPath);
@@ -187,17 +227,15 @@ final class ThrowsFixerTest extends TestCase
         self::assertSame(0, (new ThrowsFixer($root))->run());
 
         self::assertSame([
-            ['update', '--with', 'typo3/cms-core:^13.4', '-W'],
-            ['update', '--with', 'typo3/cms-core:^14.3', '-W'],
+            ['update', '-W', '--no-scripts', '--no-interaction', '--no-progress', '--prefer-dist'],
+            ['update', '-W', '--no-scripts', '--no-interaction', '--no-progress', '--prefer-dist'],
         ], $this->composerCalls($root));
 
         self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
 
-        /*
-         * The core major switch wiped the vendor dir (the fake
-         * composer recreates installed.json only).
-         */
-        self::assertFileDoesNotExist($root . '/.Build/vendor/keep-me.txt');
+        // Both installations are disposable; the original vendor survives.
+        self::assertFileExists($root . '/.Build/vendor/keep-me.txt');
+        self::assertStringContainsString('@throws NewError', file_get_contents($root . '/.state/sources.log'));
 
         /*
          * NewError is thrown on both majors (no marker), Other only on
@@ -228,9 +266,9 @@ final class ThrowsFixerTest extends TestCase
      * @throws RuntimeException
      * @throws ValueError
      */
-    public function testFailedSwitchRestoresTheStartingCoreAndSkipsTheMerge(): void
+    public function testFailedIsolatedInstallPreservesTheStartingCoreAndSkipsTheMerge(): void
     {
-        $root = $this->fixtureRepo('^13.4 || ^14.3', '14.3.10', [
+        $root = $this->fixtureRepo('^14.3 || ^13.4', '14.3.10', [
             $this->audit('expected \App\NewError, declared \App\Old'),
             $this->audit('expected \App\NewError, \App\Other, declared \App\NewError, \App\Old'),
             $this->audit('expected \App\NewError, \App\Other, declared \App\NewError, \App\Old, \App\Other'),
@@ -252,18 +290,14 @@ final class ThrowsFixerTest extends TestCase
         self::assertSame('14.3.10', $installed['packages'][0]['version']);
 
         self::assertSame([
-            ['update', '--with', 'typo3/cms-core:^13.4', '-W'],
-            ['update', '--with', 'typo3/cms-core:^14.3', '-W'],
-            ['update', '--with', 'typo3/cms-core:14.3.10', '-W'],
+            ['update', '-W', '--no-scripts', '--no-interaction', '--no-progress', '--prefer-dist'],
+            ['update', '-W', '--no-scripts', '--no-interaction', '--no-progress', '--prefer-dist'],
         ], $this->composerCalls($root));
 
         self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
 
-        /*
-         * The core major switch wiped the vendor dir (the fake
-         * composer recreates installed.json only).
-         */
-        self::assertFileDoesNotExist($root . '/.Build/vendor/keep-me.txt');
+        // Even a failed install cannot wipe the original vendor.
+        self::assertFileExists($root . '/.Build/vendor/keep-me.txt');
 
         /*
          * The merge only runs after every core converged, so a failed run
@@ -272,6 +306,75 @@ final class ThrowsFixerTest extends TestCase
         $content = (string) file_get_contents($root . '/src/Service.php');
         self::assertStringNotContainsString('t3:', $content);
         self::assertStringContainsString('@throws Other', $content);
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws RandomException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testIsolatedManifestsAndCopiedSourcesAreUsed(): void
+    {
+        $root                     = $this->fixtureRepo('^13.4 || ^14.3', '14.3.9', array_fill(0, 4, $this->audit('expected none, declared \\App\\Old')));
+        $manifest                 = json_decode(file_get_contents($root . '/composer.json'), true);
+        $manifest['repositories'] = [['options' => ['symlink' => true], 'type' => 'path', 'url' => '../sibling']];
+        $manifest['scripts']      = ['post-update-cmd' => 'touch original-must-not-change'];
+        $manifest['autoload']     = ['psr-4' => ['App\\' => 'src/']];
+        file_put_contents($root . '/composer.json', json_encode($manifest));
+        $this->protectedFiles[$root . '/composer.json'] = file_get_contents($root . '/composer.json');
+        putenv('PATH=' . $root . '/.state/bin:' . $this->oldPath);
+
+        self::assertSame(0, (new ThrowsFixer($root))->run());
+        $environments = array_map(static fn(string $line): array => json_decode($line, true), file($root . '/.state/manifests.log', FILE_IGNORE_NEW_LINES));
+        self::assertNotSame($environments[0]['root'], $environments[1]['root']);
+
+        foreach ($environments as $environment) {
+            self::assertSame('.Build/vendor', $environment['manifest']['config']['vendor-dir']);
+            self::assertSame('src/', $environment['manifest']['autoload']['psr-4']['App\\']);
+            self::assertArrayNotHasKey('scripts', $environment['manifest']);
+            self::assertFalse($environment['manifest']['repositories'][0]['options']['symlink']);
+            self::assertSame($root . '/../sibling', $environment['manifest']['repositories'][1]['url']);
+            self::assertFalse($environment['manifest']['repositories'][1]['options']['symlink']);
+            self::assertDirectoryDoesNotExist($environment['root']);
+        }
+
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RandomException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testIsolatedRunNeverAttemptsARestore(): void
+    {
+        $root = $this->fixtureRepo('^13.4 || ^14.3', '14.3.9', array_fill(0, 4, $this->audit('expected none, declared \\App\\Old')));
+        file_put_contents($root . '/.state/fail-calls', '3');
+        putenv('PATH=' . $root . '/.state/bin:' . $this->oldPath);
+
+        self::assertSame(0, (new ThrowsFixer($root))->run());
+        self::assertSame(2, count($this->composerCalls($root)));
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RandomException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testLargeStderrDoesNotBlockComposerOrPhpstan(): void
+    {
+        $root = $this->fixtureRepo('^13.4 || ^14.3', '14.3.10', array_fill(0, 4, $this->audit('expected none, declared \\App\\Old')));
+        file_put_contents($root . '/.state/large-stderr', '1');
+        putenv('PATH=' . $root . '/.state/bin:' . $this->oldPath);
+
+        self::assertSame(0, (new ThrowsFixer($root))->run());
+        self::assertSame(2, count($this->composerCalls($root)));
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
     }
 
     /**
@@ -318,6 +421,45 @@ final class ThrowsFixerTest extends TestCase
      * @throws RuntimeException
      * @throws ValueError
      */
+    public function testPhpstanFindingExitCodeStillAllowsFixing(): void
+    {
+        $root = $this->fixtureRepo('^14.3', '14.3.10', array_fill(0, 2, $this->audit('expected none, declared \\App\\Old')));
+        file_put_contents($root . '/.state/phpstan-exit', '1');
+
+        self::assertSame(0, (new ThrowsFixer($root))->run());
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RandomException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testPhpstanUnexpectedExitCodeRejectsEvenValidJson(): void
+    {
+        $root   = $this->fixtureRepo('^14.3', '14.3.10', [$this->audit('expected none, declared \\App\\Old')]);
+        $before = file_get_contents($root . '/src/Service.php');
+        file_put_contents($root . '/.state/phpstan-exit', '2');
+
+        try {
+            (new ThrowsFixer($root))->run();
+            self::fail('expected failed analysis');
+        } catch (RuntimeException $exception) {
+            self::assertStringContainsString('phpstan failed', $exception->getMessage());
+        }
+
+        self::assertSame($before, file_get_contents($root . '/src/Service.php'));
+        self::assertTempConfigurationCarriesTheNeonExtension($this->phpstanConfigurations($root));
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws RandomException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
     public function testSingleMajorRunNeedsNoCoreSwitch(): void
     {
         $root = $this->fixtureRepo('^14.3', '14.3.10', [
@@ -353,7 +495,7 @@ final class ThrowsFixerTest extends TestCase
          * No core switch, no vendor wipe.
          */
         self::assertFileExists($root . '/.Build/vendor/keep-me.txt');
-        self::assertFileDoesNotExist($root . '/.state/composer.log');
+        self::assertCount(1, $this->composerCalls($root));
     }
 
     /**
@@ -424,6 +566,7 @@ final class ThrowsFixerTest extends TestCase
         file_put_contents($root . '/Build/Quality/phpstan.neon.dist', "parameters:\n    level: 0\n");
         file_put_contents($root . '/.state/responses.json', json_encode($responses));
         file_put_contents($root . '/.state/fail-calls', '');
+        copy(__DIR__ . '/stubs/fake-phpstan.php', $root . '/.state/fake-phpstan.php');
         file_put_contents($root . '/src/Service.php', <<<'php'
             <?php
 
@@ -445,6 +588,12 @@ final class ThrowsFixerTest extends TestCase
         chmod($root . '/.Build/bin/phpstan', 0755);
         copy(__DIR__ . '/stubs/fake-composer.php', $root . '/.state/bin/composer');
         chmod($root . '/.state/bin/composer', 0755);
+        putenv('PATH=' . $root . '/.state/bin:' . $this->oldPath);
+        file_put_contents($root . '/composer.lock', 'original lock');
+
+        foreach (['composer.json', 'composer.lock', '.Build/vendor/keep-me.txt', '.Build/vendor/composer/installed.json', '.Build/bin/phpstan'] as $file) {
+            $this->protectedFiles[$root . '/' . $file] = file_get_contents($root . '/' . $file);
+        }
 
         return $root;
     }
