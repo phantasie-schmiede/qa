@@ -127,6 +127,23 @@ final class XlfSorterTest extends TestCase
      * @throws ExpectationFailedException
      * @throws RuntimeException
      */
+    public function testApplySortsTransUnitIdsWithNumbersNaturally(): void
+    {
+        $file   = $this->xlfFile('Numeric.xlf', $this->template(['hints.10', 'hints.2', 'hints.1']));
+        $sorter = new XlfSorter();
+
+        self::assertSame(['changed' => [$file], 'skipped' => []], $sorter->apply([$file]));
+        self::assertSame($this->template(['hints.1', 'hints.2', 'hints.10']) . "\n", file_get_contents($file));
+
+        // a second run changes nothing
+        self::assertSame(['changed' => [], 'skipped' => []], $sorter->apply([$file]));
+        self::assertSame(['problems' => [], 'unsorted' => []], $sorter->check([$file]));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     */
     public function testApplySortsUnitsAndGroupsCaseInsensitivelyTogether(): void
     {
         $file   = $this->xlfFile('Mixed.xlf', $this->fileWith([$this->unit('active'), $this->group('contacts', ['contacts[0]', 'contacts[1]']), $this->group('contactGroups', ['contactGroups[0]', 'contactGroups[1]']), $this->unit('create')]));
@@ -256,6 +273,16 @@ final class XlfSorterTest extends TestCase
     public function testCheckReportsUnsortedFile(): void
     {
         $file = $this->xlfFile('Unsorted.xlf', $this->template(['zeta', 'Alpha', 'tab.example.label', 'mid']));
+
+        self::assertSame(['problems' => [], 'unsorted' => [$file]], (new XlfSorter())->check([$file]));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testCheckReportsUnsortedNumericIds(): void
+    {
+        $file = $this->xlfFile('NumericUnsorted.xlf', $this->template(['hints.10', 'hints.2']));
 
         self::assertSame(['problems' => [], 'unsorted' => [$file]], (new XlfSorter())->check([$file]));
     }
