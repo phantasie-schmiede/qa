@@ -282,6 +282,44 @@ final class ThrowsDocblockApplierTest extends TestCase
      * @throws RuntimeException
      * @throws ValueError
      */
+    public function testApplyingTheSameMessageTwiceLeavesTheFileUnchanged(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                public function run(): void
+                {
+                    throw new \InvalidArgumentException('x');
+                }
+            }
+            php);
+
+        $entries = [
+            [
+                'line'    => 7,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \InvalidArgumentException, \Symfony\Component\Console\Exception\InvalidArgumentException, declared none.',
+            ],
+        ];
+
+        $applier = new ThrowsDocblockApplier();
+        self::assertSame(['fixed' => 1, 'skipped' => []], $applier->apply($file, $entries));
+        $contentAfterFirstRun = (string) file_get_contents($file);
+
+        $result = $applier->apply($file, $entries);
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+
+        self::assertSame($contentAfterFirstRun, (string) file_get_contents($file));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
     public function testCollidingShortNameGetsDescriptiveAlias(): void
     {
         $file = $this->fixture(<<<'php'
@@ -1114,6 +1152,45 @@ final class ThrowsDocblockApplierTest extends TestCase
 
     /**
      * @throws ExpectationFailedException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testNewCollidingNamesGetAliasesWhenTheShortNameIsAlreadyImported(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            use Symfony\Component\Console\Exception\InvalidArgumentException;
+
+            final class Service
+            {
+                public function run(): void
+                {
+                    throw new \InvalidArgumentException('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \App\Custom\InvalidArgumentException, \InvalidArgumentException, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        $content = (string) file_get_contents($file);
+        self::assertSame(1, substr_count($content, 'use App\Custom\InvalidArgumentException as CustomInvalidArgumentException;'));
+        self::assertSame(1, substr_count($content, 'use InvalidArgumentException as GlobalInvalidArgumentException;'));
+        self::assertSame(1, substr_count($content, '@throws CustomInvalidArgumentException'));
+        self::assertSame(1, substr_count($content, '@throws GlobalInvalidArgumentException'));
+        self::assertSame(0, substr_count($content, '@throws InvalidArgumentException'));
+    }
+
+    /**
+     * @throws ExpectationFailedException
      */
     public function testParseMessageReadsNoneAsAnEmptyList(): void
     {
@@ -1413,6 +1490,46 @@ final class ThrowsDocblockApplierTest extends TestCase
     }
 
     /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testShortNameCollisionsAreDetectedCaseInsensitively(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            use Other\Error\invalidargumentexception;
+
+            final class Service
+            {
+                public function run(): void
+                {
+                    throw new \InvalidArgumentException('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 9,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \InvalidArgumentException, \Symfony\Component\Console\Exception\InvalidArgumentException, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        $content = (string) file_get_contents($file);
+        self::assertSame(1, substr_count($content, 'use InvalidArgumentException as GlobalInvalidArgumentException;'));
+        self::assertSame(1, substr_count($content, 'use Symfony\Component\Console\Exception\InvalidArgumentException as ConsoleInvalidArgumentException;'));
+        self::assertStringNotContainsString("\nuse InvalidArgumentException;", $content);
+        self::assertStringNotContainsString("\nuse Symfony\Component\Console\Exception\InvalidArgumentException;", $content);
+        self::assertSame(1, substr_count($content, '@throws GlobalInvalidArgumentException'));
+        self::assertSame(1, substr_count($content, '@throws ConsoleInvalidArgumentException'));
+    }
+
+    /**
      * @throws Exception
      * @throws ExpectationFailedException
      * @throws FrameworkInvalidArgumentException
@@ -1500,6 +1617,42 @@ final class ThrowsDocblockApplierTest extends TestCase
                 }
             }
             php, file_get_contents($file));
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws RuntimeException
+     * @throws ValueError
+     */
+    public function testTwoNewCollidingNamesGiveThePlainShortNameToTheLongerFqcn(): void
+    {
+        $file = $this->fixture(<<<'php'
+            <?php
+
+            namespace App;
+
+            final class Service
+            {
+                public function run(): void
+                {
+                    throw new \InvalidArgumentException('x');
+                }
+            }
+            php);
+
+        $result = (new ThrowsDocblockApplier())->apply($file, [
+            [
+                'line'    => 7,
+                'message' => 'Method App\Service::run() @throws do not match the thrown exceptions: expected \InvalidArgumentException, \Symfony\Component\Console\Exception\InvalidArgumentException, declared none.',
+            ],
+        ]);
+
+        self::assertSame(['fixed' => 1, 'skipped' => []], $result);
+        $content = (string) file_get_contents($file);
+        self::assertSame(1, substr_count($content, 'use InvalidArgumentException as GlobalInvalidArgumentException;'));
+        self::assertSame(1, substr_count($content, 'use Symfony\Component\Console\Exception\InvalidArgumentException;'));
+        self::assertSame(1, substr_count($content, '@throws GlobalInvalidArgumentException'));
+        self::assertSame(1, substr_count($content, '@throws InvalidArgumentException'));
     }
 
     /**

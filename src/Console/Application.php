@@ -168,8 +168,9 @@ final class Application
                     core majors (phpstan loop per major, max 25 fix
                     rounds each): the docblocks end up as the union of
                     the per-major thrown sets, a "// t3:N" marker on
-                    the lines a single major sees, the lines no major
-                    sees are removed. Uses disposable repository copies and
+                    the lines a single major sees (only with several
+                    majors in the matrix), the lines no major sees are
+                    removed. Uses disposable repository copies and
                     Composer installations per core in .Build/throws-fix;
                     normal vendor/bin and Composer files remain unchanged.
                     Requires network access; no core restoration is needed

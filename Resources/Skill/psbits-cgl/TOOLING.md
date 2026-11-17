@@ -68,7 +68,8 @@ cross validation over all cores follows, with a repair loop when the
 additions of one core changed the thrown set of another, and only when
 every core is clean does the final merge write each docblock exactly
 once: the union of the per-core sets, a `// t3:N` marker on the lines
-a single core sees, and the lines no core sees removed (see
+a single core sees (only when the matrix spans several cores; with one
+core no line is marked), and the lines no core sees removed (see
 `SKILL.md`, 3).
 
 Copies are refreshed after docblock edits; only copied source files

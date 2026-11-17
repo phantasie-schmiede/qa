@@ -14,6 +14,7 @@ namespace PSBits\Qa\Quality;
 use RuntimeException;
 use ValueError;
 
+use function array_keys;
 use function array_map;
 use function array_merge;
 use function array_slice;
@@ -30,6 +31,7 @@ use function max;
 use function str_starts_with;
 use function strlen;
 use function strrpos;
+use function strtolower;
 use function substr;
 use function substr_count;
 use function trim;
@@ -62,7 +64,9 @@ use function usort;
  *
  * The @throws lines use the short name of the exception and the missing
  * use statement is added to the file (an exception from the own namespace
- * needs no import; a colliding short name gets a descriptive alias);
+ * needs no import; a colliding short name gets a descriptive alias, and
+ * several new names competing for one free short name give the plain name
+ * to the longest FQN);
  * the use statements orphaned by removed lines are dropped by the
  * php-cs-fixer run (no_unused_imports).
  */
@@ -412,9 +416,14 @@ final class ThrowsDocblockApplier
     /**
      * Builds a descriptive alias for a colliding short name: the last
      * non-generic namespace segment plus the class name, following the
-     * house style (Typo3ArrayUtility, DbalException, ComdirectApiService).
+     * house style (Typo3ArrayUtility, DbalException, ComdirectApiService);
+     * a global-namespace class has no segment to describe it, so it gets
+     * a "Global" prefix; when nothing of that works the class name plus a
+     * numeric suffix is the fallback.
      *
-     * @param array<string, true> $taken the short names in use in the file
+     * @param array<string, true> $taken the short names in use or already
+     *                                   assigned, keyed by their lowercase
+     *                                   form
      */
     private function buildAlias(string $fqcn, array $taken): string
     {
@@ -448,6 +457,14 @@ final class ThrowsDocblockApplier
         $segments = explode('\\', $fqcn);
         $class    = (string) array_pop($segments);
 
+        if ([] === $segments) {
+            $alias = 'Global' . ucfirst($class);
+
+            if (!isset($taken[strtolower($alias)])) {
+                return $alias;
+            }
+        }
+
         foreach (array_reverse($segments) as $segment) {
             if (in_array($segment, $generic, true)) {
                 continue;
@@ -455,7 +472,7 @@ final class ThrowsDocblockApplier
 
             $alias = ucfirst($segment) . ucfirst($class);
 
-            if (!isset($taken[$alias])) {
+            if (!isset($taken[strtolower($alias)])) {
                 return $alias;
             }
         }
@@ -463,7 +480,7 @@ final class ThrowsDocblockApplier
         $alias  = $class . '2';
         $suffix = 3;
 
-        while (isset($taken[$alias])) {
+        while (isset($taken[strtolower($alias)])) {
             $alias = $class . $suffix;
             ++$suffix;
         }
@@ -725,9 +742,14 @@ final class ThrowsDocblockApplier
      * exception FQCNs.
      *
      * An exception from the own namespace needs no import, an already
-     * imported one is reused, a colliding short name gets a descriptive
-     * alias. Without a namespace (or with unparseable imports) the FQCN
-     * with a leading backslash stays the only safe form.
+     * imported one is reused, a name whose short name is taken gets a
+     * descriptive alias. Several new names that compete for one free
+     * short name give the plain name to the longest FQN (the house style
+     * prefers the longer FQN) and an alias to the rest; short names are
+     * compared case-insensitively, and an alias never collides with an
+     * imported short name or an alias assigned in the same run. Without a
+     * namespace (or with unparseable imports) the FQCN with a leading
+     * backslash stays the only safe form.
      *
      * @param array{
      *   namespace: ?string,
@@ -745,8 +767,20 @@ final class ThrowsDocblockApplier
             return ['display' => [], 'lines' => []];
         }
 
-        $display     = [];
-        $importLines = [];
+        $display = [];
+        $taken   = [];
+
+        foreach (array_keys($uses['takenShorts']) as $short) {
+            $taken[strtolower($short)] = true;
+        }
+
+        /*
+         * The names that need a new import, grouped by their short name,
+         * so that a name whose short name is already taken in the file
+         * (or that is resolved above) cannot claim it with a plain
+         * import.
+         */
+        $byShort = [];
 
         foreach ($names as $name) {
             $position = strrpos($name, '\\');
@@ -770,17 +804,47 @@ final class ThrowsDocblockApplier
                 continue;
             }
 
-            if (!isset($uses['takenShorts'][$short])) {
-                $display[$name] = $short;
-                $importLines[]  = 'use ' . $name . ';';
+            $byShort[strtolower($short)][] = $name;
+        }
 
-                continue;
+        $importLines = [];
+
+        foreach ($byShort as $lowerShort => $group) {
+            /*
+             * The plain short name goes to the longest FQN of the group
+             * (a tie keeps the name order of $names); when the short
+             * name is already taken every candidate gets an alias.
+             */
+            $plain = null;
+
+            if (!isset($taken[$lowerShort])) {
+                $plain = $group[0];
+
+                foreach ($group as $name) {
+                    if (strlen($name) > strlen($plain)) {
+                        $plain = $name;
+                    }
+                }
             }
 
-            $alias = $this->buildAlias($name, $uses['takenShorts']);
+            foreach ($group as $name) {
+                $position = strrpos($name, '\\');
+                $short    = false === $position ? $name : substr($name, $position + 1);
 
-            $display[$name] = $alias;
-            $importLines[]  = 'use ' . $name . ' as ' . $alias . ';';
+                if ($name === $plain) {
+                    $display[$name]     = $short;
+                    $importLines[]      = 'use ' . $name . ';';
+                    $taken[$lowerShort] = true;
+
+                    continue;
+                }
+
+                $alias = $this->buildAlias($name, $taken);
+
+                $display[$name]            = $alias;
+                $importLines[]             = 'use ' . $name . ' as ' . $alias . ';';
+                $taken[strtolower($alias)] = true;
+            }
         }
 
         usort($importLines, 'strcasecmp');
