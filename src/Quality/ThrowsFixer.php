@@ -68,8 +68,8 @@ use function usort;
  * Only after every core has converged the fixer performs the final
  * merge: one write per method with the exact union of the per-core
  * thrown sets. A line seen by a single core carries a trailing "// t3:N"
- * marker (analyzer visibility, not runtime throwability); lines seen by
- * no core are removed. The normal vendor/bin directories and Composer files
+ * marker when the matrix spans several cores (analyzer visibility, not
+ * runtime throwability); lines seen by no core are removed. The normal vendor/bin directories and Composer files
  * remain untouched; no dependency restoration is needed. Only copied repository
  * files may be mapped back to the original source. The current QA code is
  * snapshotted for every run, so all majors use the same rules and applier.
@@ -487,8 +487,10 @@ final class ThrowsFixer
 
     /**
      * The final write: per method the exact union of the per-core thrown
-     * sets, a "// t3:N" marker on the lines a single major sees and no
-     * line for an exception no core sees.
+     * sets, a "// t3:N" marker on the lines a single major sees (only
+     * when the matrix spans several majors; with one major every line is
+     * seen by all majors and stays unmarked) and no line for an exception
+     * no core sees.
      *
      * @param array<string, list<array{file: string, line: int, message: string}>> $sets major.minor => final audit snapshot
      * @throws RuntimeException
@@ -496,7 +498,8 @@ final class ThrowsFixer
      */
     private function merge(ThrowsDocblockApplier $applier, array $sets): void
     {
-        $methods = [];
+        $markSingleMajor = 1 < count($sets);
+        $methods         = [];
 
         foreach ($sets as $majorMinor => $entries) {
             $major = explode('.', $majorMinor)[0];
@@ -535,7 +538,9 @@ final class ThrowsFixer
             $items = [];
 
             foreach ($method['names'] as $name => $majors) {
-                $marker  = 1 === count($majors) ? ' // t3:' . reset($majors) : '';
+                $marker = $markSingleMajor && 1 === count($majors)
+                    ? ' // t3:' . reset($majors)
+                    : '';
                 $items[] = $name . $marker;
             }
 

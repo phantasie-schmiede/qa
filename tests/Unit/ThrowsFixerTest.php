@@ -480,7 +480,7 @@ final class ThrowsFixerTest extends TestCase
             final class Service
             {
                 /**
-                 * @throws NewError // t3:14
+                 * @throws NewError
                  */
                 public function run(): void
                 {
