@@ -62,6 +62,39 @@ are skipped entirely by the shared workflow. The `TYPO3_API_TOKEN` secret
 is optional: repositories without it skip the TER publish, everything else
 runs unchanged.
 
+### Development requirement warnings
+
+`psbits/qa` supplies Composer Normalize, PHP-CS-Fixer, PHP_CodeSniffer,
+TypoScript lint, PHPStan, PHPUnit, the TYPO3 testing framework and
+`saschaegerer/phpstan-typo3` as regular dependencies. Callers need no duplicate
+root requirements, even when installing QA without its development dependencies.
+This makes QA TYPO3-specific and installs test tools even in callers without tests.
+`typo3/cms-core` remains a development requirement of QA to define its own matrix.
+
+`qa sync`, `qa sync --dry-run` and `qa check` still check existing root
+`require-dev` pins for `saschaegerer/phpstan-typo3`: TYPO3 13 requires coverage
+of `^2.1`, TYPO3 14 of `^3.1`. Missing root declarations are not warned about.
+The caller's `typo3/cms-core` constraint determines the applicable branches;
+without that declaration both supported majors are assumed.
+
+Composer Semver checks intersection with **each** required version branch, not
+text equality. For a dual-major extension, `^2.2 || ^3.1` and `>=2.1 <4.0` are
+accepted, while `^2.1` warns about the missing TYPO3-14 branch. Invalid constraints
+also produce warnings. This is declared version coverage, not proof that the
+complete dependency graph resolves; the Composer test matrix verifies that.
+
+The same commands warn when a `require-dev` entry can be removed because
+`psbits/qa` already directly requires that package. The requirements are read
+from the installed QA package's `composer.json`. A removal is recommended only
+when the QA constraint is a subset of the caller constraint: `^3.95` supplied by
+QA makes a caller's `^3.95` or `^3.0` redundant, but not a narrower `~3.95.0` pin.
+Platform requirements and packages supplied only transitively are excluded.
+No entries are removed automatically, and warnings do not change the exit code.
+Composer plugins still need root authorization: sync adds missing
+`config.allow-plugins` entries for `ergebnis/composer-normalize` and
+`dealerdirect/phpcodesniffer-composer-installer`, preserves explicit disables,
+and check fails when either required authorization is missing or disabled.
+
 ### Safe synchronization
 
 `qa sync --dry-run` previews hook, workflow, skill and Composer script changes

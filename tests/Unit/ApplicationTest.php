@@ -86,6 +86,21 @@ final class ApplicationTest extends TestCase
         ];
     }
 
+    /** @return array<string, array{string, string, bool}> */
+    public static function devRequirementConstraints(): array
+    {
+        return [
+            'alternative syntax' => ['>=2.1 <4.0', '^13.4 || ^14.3', false],
+            'both branches'      => ['^2.1 || ^3.1', '^13.4 || ^14.3', false],
+            'invalid constraint' => ['not-a-version', '^13.4 || ^14.3', true],
+            'missing v14 branch' => ['^2.1', '^13.4 || ^14.3', true],
+            'narrower branches'  => ['^2.2 || ^3.1', '^13.4 || ^14.3', false],
+            'v13 only'           => ['^2.1', '^13.4', false],
+            'v14 only'           => ['^3.1', '^14.3', false],
+            'wrong v13 branch'   => ['^3.1', '^13.4', true],
+        ];
+    }
+
     /** @return array<string, array{string, list<string>, string}> */
     public static function invalidAggregates(): array
     {
@@ -95,6 +110,19 @@ final class ApplicationTest extends TestCase
             'duplicate qa'   => ['qa', ['@fix:all', '@lint:all', '@lint:all'], 'duplicates: @lint:all'],
             'fix order'      => ['fix:all', ['@fix:php', '@fix:throws', '@fix:composer'], 'order differs'],
             'qa order'       => ['qa', ['@lint:all', '@fix:all'], 'order differs'],
+        ];
+    }
+
+    /** @return array<string, array{string, bool}> */
+    public static function redundantDevConstraints(): array
+    {
+        return [
+            'broader constraint'    => ['^3.0', true],
+            'disjoint constraint'   => ['^2.0', false],
+            'equivalent syntax'     => ['>=3.95.0 <4.0.0', true],
+            'identical constraint'  => ['^3.95', true],
+            'narrower pin'          => ['~3.95.0', false],
+            'partially overlapping' => ['>=3.0 <3.96', false],
         ];
     }
 
@@ -166,6 +194,7 @@ final class ApplicationTest extends TestCase
 
         self::assertSame(1, $exit);
         self::assertStringContainsString('FAIL: allow-plugins.dealerdirect/phpcodesniffer-composer-installer missing or not true (run qa sync and commit)', $output);
+        self::assertStringContainsString('FAIL: allow-plugins.ergebnis/composer-normalize missing or not true', $output);
     }
 
     /**
@@ -308,6 +337,105 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @throws ExpectationFailedException
+     * @throws JsonException
+     */
+    #[DataProvider('devRequirementConstraints')]
+    public function testDevRequirementBranchCoverage(string $actual, string $core, bool $warning): void
+    {
+        chdir($this->root);
+        $this->sync();
+        $file                = $this->root . '/composer.json';
+        $data                = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+        $data['require']     = ['typo3/cms-core' => $core];
+        $data['require-dev'] = [
+            'ergebnis/composer-normalize' => '^2.56',
+            'saschaegerer/phpstan-typo3'  => $actual,
+            'vendor/custom-tool'          => '*',
+        ];
+        file_put_contents($file, json_encode($data, JSON_THROW_ON_ERROR));
+        $before = file_get_contents($file);
+
+        foreach ([['qa', 'sync'], ['qa', 'sync', '--dry-run'], ['qa', 'check']] as $command) {
+            ob_start();
+            $exit   = Application::execute($command);
+            $output = (string) ob_get_clean();
+            self::assertSame(0, $exit);
+            self::assertSame($warning, str_contains($output, 'version branch') || str_contains($output, 'invalid version constraint'));
+            self::assertStringNotContainsString('vendor/custom-tool', $output);
+            self::assertSame($before, file_get_contents($file));
+        }
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws JsonException
+     */
+    public function testDevRequirementsNeedNoRootToolDeclarations(): void
+    {
+        chdir($this->root);
+        mkdir($this->root . '/Build/Quality', 0755, true);
+        file_put_contents($this->root . '/Build/Quality/phpstan.neon.dist', "includes:\n  - ../../.Build/vendor/saschaegerer/phpstan-typo3/extension.neon\n");
+        mkdir($this->root . '/Tests/Unit', 0755, true);
+        file_put_contents($this->root . '/Tests/Unit/ExampleTest.php', '<?php');
+        mkdir($this->root . '/Configuration/TypoScript', 0755, true);
+        file_put_contents($this->root . '/Configuration/TypoScript/setup.typoscript', '');
+        $output = $this->sync();
+
+        self::assertStringNotContainsString('warning: require-dev.', $output);
+
+        [$exit, $output] = $this->check();
+        self::assertSame(0, $exit);
+        self::assertStringNotContainsString('warning: require-dev.', $output);
+        $data = json_decode((string) file_get_contents($this->root . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        self::assertArrayNotHasKey('require-dev', $data);
+    }
+
+    /** @throws ExpectationFailedException */
+    public function testDevRequirementsSkipUnusedTools(): void
+    {
+        chdir($this->root);
+        $output = $this->sync();
+        self::assertStringNotContainsString('warning: require-dev.', $output);
+
+        foreach (['helmich/typo3-typoscript-lint', 'phpstan/phpstan', 'phpunit/phpunit', 'saschaegerer/phpstan-typo3', 'typo3/testing-framework'] as $package) {
+            self::assertStringNotContainsString('warning: require-dev.' . $package, $output);
+        }
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     * @throws JsonException
+     */
+    #[DataProvider('redundantDevConstraints')]
+    public function testRedundantDevRequirements(string $actual, bool $warning): void
+    {
+        chdir($this->root);
+        $this->sync();
+        $file                = $this->root . '/composer.json';
+        $data                = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+        $data['require-dev'] = [
+            'friendsofphp/php-cs-fixer' => $actual,
+            'php'                       => '^8.3',
+            'vendor/custom-tool'        => '*',
+        ];
+        file_put_contents($file, json_encode($data, JSON_THROW_ON_ERROR));
+        $before = file_get_contents($file);
+
+        foreach ([['qa', 'sync'], ['qa', 'sync', '--dry-run'], ['qa', 'check']] as $command) {
+            ob_start();
+            $exit   = Application::execute($command);
+            $output = (string) ob_get_clean();
+            self::assertSame(0, $exit);
+            self::assertSame($warning, str_contains($output, 'warning: require-dev.friendsofphp/php-cs-fixer can be removed'));
+            self::assertStringNotContainsString('require-dev.php can be removed', $output);
+            self::assertStringNotContainsString('vendor/custom-tool', $output);
+            self::assertSame($before, file_get_contents($file));
+        }
+    }
+
+    /**
      * @throws Exception
      * @throws ExpectationFailedException
      */
@@ -398,6 +526,7 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('added config allow-plugins.dealerdirect/phpcodesniffer-composer-installer', $output);
         $data = json_decode((string) file_get_contents($this->root . '/composer.json'), true);
         self::assertSame(true, $data['config']['allow-plugins']['dealerdirect/phpcodesniffer-composer-installer']);
+        self::assertSame(true, $data['config']['allow-plugins']['ergebnis/composer-normalize']);
         self::assertSame(0, $this->check()[0]);
     }
 
@@ -709,7 +838,7 @@ final class ApplicationTest extends TestCase
     public function testSyncKeepsDisabledAllowPluginsAndCheckFails(): void
     {
         $data = [
-            'config'  => ['allow-plugins' => ['dealerdirect/phpcodesniffer-composer-installer' => false]],
+            'config'  => ['allow-plugins' => ['dealerdirect/phpcodesniffer-composer-installer' => false, 'ergebnis/composer-normalize' => false]],
             'name'    => 'fixture-extension',
             'scripts' => self::MINIMAL_SCRIPTS,
         ];
@@ -724,6 +853,8 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('hint: allow-plugins.dealerdirect/phpcodesniffer-composer-installer is false, the shared tooling requires true', $output);
         $data = json_decode((string) file_get_contents($this->root . '/composer.json'), true);
         self::assertSame(false, $data['config']['allow-plugins']['dealerdirect/phpcodesniffer-composer-installer']);
+        self::assertSame(false, $data['config']['allow-plugins']['ergebnis/composer-normalize']);
+        self::assertStringContainsString('hint: allow-plugins.ergebnis/composer-normalize is false', $output);
 
         $before = (string) file_get_contents($this->root . '/composer.json');
         $this->sync();
@@ -1006,7 +1137,7 @@ final class ApplicationTest extends TestCase
     private function writeComposerJson(array $scripts): void
     {
         $data = [
-            'config'  => ['allow-plugins' => ['dealerdirect/phpcodesniffer-composer-installer' => true]],
+            'config'  => ['allow-plugins' => ['dealerdirect/phpcodesniffer-composer-installer' => true, 'ergebnis/composer-normalize' => true]],
             'name'    => 'fixture-extension',
             'scripts' => $scripts,
         ];

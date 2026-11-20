@@ -18,7 +18,6 @@ use PSBits\Qa\Testing\Support\LanguageStackSeeder;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Exception\NoSuchCacheException;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
-use TYPO3\CMS\Core\Localization\LanguageService;
 use TYPO3\CMS\Core\Localization\LanguageServiceFactory;
 use TYPO3\CMS\Core\Localization\Locale;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
@@ -61,7 +60,7 @@ final class LanguageStackSeederTest extends UnitTestCase
         self::assertInstanceOf(FakeLanguageServiceFactory::class, $factory);
 
         $languageService = $factory->create(new Locale('en'));
-        $label           = method_exists(LanguageService::class, 'translate')
+        $label           = method_exists($languageService, 'translate')
             ? $languageService->translate('key', 'test-domain')
             : $languageService->sL('key');
         self::assertSame('Label key', $label);

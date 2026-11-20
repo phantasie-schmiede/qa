@@ -11,7 +11,11 @@ declare(strict_types=1);
 
 namespace PSBits\Qa\Console;
 
+use Composer\Semver\Constraint\ConstraintInterface;
+use Composer\Semver\Intervals;
+use Composer\Semver\VersionParser;
 use FilesystemIterator;
+use JsonException;
 use PSBits\Qa\Quality\ThrowsFixer;
 use PSBits\Qa\Quality\XlfSorter;
 use RecursiveDirectoryIterator;
@@ -41,6 +45,7 @@ use function is_dir;
 use function is_file;
 use function json_decode;
 use function json_encode;
+use function ksort;
 use function ltrim;
 use function mkdir;
 use function rmdir;
@@ -67,6 +72,7 @@ final class Application
      */
     private const array ALLOW_PLUGINS = [
         'dealerdirect/phpcodesniffer-composer-installer' => true,
+        'ergebnis/composer-normalize'                    => true,
     ];
 
     /**
@@ -154,11 +160,13 @@ final class Application
                     create test:all, lint:all, fix:all and qa when
                     missing), add the Composer allow-plugins entries the
                     shared tooling requires, and report existing
-                    aggregates that deviate from the expected standard
+                    aggregates that deviate from the expected standard;
+                    warn about redundant dev requirements and core-blocking pins
       qa check      Verify hook, skill links and caller CI workflow match
                     the installed package, verify that the caller
                     composer.json carries the shared QA scripts and the
-                    required Composer allow-plugins entries (CI gate)
+                    required Composer allow-plugins entries (CI gate);
+                    dev requirement warnings do not fail the check
       qa sync --dry-run
                     Preview changes without writing files; conflicts fail
       qa sync --force
@@ -338,8 +346,10 @@ final class Application
     }
 
     /**
+     * @throws JsonException
      * @throws LogicException
      * @throws RuntimeException
+     * @throws UnexpectedValueException
      */
     private static function check(string $root): int
     {
@@ -385,6 +395,7 @@ final class Application
 
         $failed |= self::verifyScripts($root);
         $failed |= self::verifyAllowPlugins($root);
+        self::warnDevRequirements($root);
 
         return $failed;
     }
@@ -540,6 +551,17 @@ final class Application
     private static function packageRoot(): string
     {
         return dirname(__DIR__, 2);
+    }
+
+    /**
+     * Composer does not document the invalid-constraint exception on parseConstraints().
+     *
+     * @throws RuntimeException
+     * @throws UnexpectedValueException
+     */
+    private static function parseVersionConstraint(string $constraint): ConstraintInterface
+    {
+        return (new VersionParser())->parseConstraints($constraint);
     }
 
     private static function paths(): int
@@ -731,6 +753,7 @@ final class Application
     }
 
     /**
+     * @throws JsonException
      * @throws LogicException
      * @throws RuntimeException
      * @throws UnexpectedValueException
@@ -862,6 +885,7 @@ final class Application
 
         self::syncScripts($root, $dryRun);
         self::syncAllowPlugins($root, $dryRun);
+        self::warnDevRequirements($root);
 
         return 0;
     }
@@ -1060,6 +1084,96 @@ final class Application
         }
 
         return $failed;
+    }
+
+    /**
+     * Reports declared version coverage without changing dependencies or the exit code.
+     * Composer's matrix installations remain responsible for dependency resolution.
+     *
+     * @throws JsonException
+     * @throws RuntimeException
+     * @throws UnexpectedValueException
+     */
+    private static function warnDevRequirements(string $root): void
+    {
+        $data         = json_decode((string) file_get_contents($root . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        $requirements = [];
+        $parser       = new VersionParser();
+
+        if (isset($data['require-dev']['saschaegerer/phpstan-typo3'])) {
+            $branches = [];
+            $core     = $data['require']['typo3/cms-core'] ?? $data['require-dev']['typo3/cms-core'] ?? '^13.4 || ^14.3';
+
+            try {
+                $constraint = self::parseVersionConstraint($core);
+
+                foreach (['^13.4' => '^2.1', '^14.3' => '^3.1'] as $coreBranch => $toolBranch) {
+                    if (Intervals::haveIntersections($constraint, $parser->parseConstraints($coreBranch))) {
+                        $branches[] = $toolBranch;
+                    }
+                }
+            } catch (UnexpectedValueException $exception) {
+                echo 'warning: typo3/cms-core has an invalid version constraint: ' . $exception->getMessage() . "\n";
+            }
+
+            if ([] !== $branches) {
+                $requirements['saschaegerer/phpstan-typo3'] = ['branches' => $branches, 'condition' => 'always'];
+            }
+        }
+
+        ksort($requirements);
+
+        foreach ($requirements as $package => $requirement) {
+            if (!self::scriptApplicable(['command' => '', 'condition' => $requirement['condition'], 'name' => ''], $root)) {
+                continue;
+            }
+
+            $actual      = $data['require-dev'][$package] ?? null;
+            $recommended = implode(' || ', $requirement['branches']);
+
+            try {
+                $constraint = self::parseVersionConstraint($actual);
+
+                foreach ($requirement['branches'] as $branch) {
+                    if (!Intervals::haveIntersections($constraint, $parser->parseConstraints($branch))) {
+                        echo "warning: require-dev.{$package} is \"{$actual}\"; version branch {$branch} is not covered; recommended: {$recommended}\n";
+                    }
+                }
+            } catch (UnexpectedValueException $exception) {
+                echo "warning: require-dev.{$package} has an invalid version constraint: " . $exception->getMessage() . "; recommended: {$recommended}\n";
+            }
+        }
+
+        self::warnRedundantDevRequirements($root);
+    }
+
+    /**
+     * Only direct package requirements are a stable dependency contract.
+     * A narrower caller constraint may be an intentional pin and is preserved.
+     *
+     * @throws JsonException
+     * @throws RuntimeException
+     */
+    private static function warnRedundantDevRequirements(string $root): void
+    {
+        $caller  = json_decode((string) file_get_contents($root . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+        $tooling = json_decode((string) file_get_contents(self::packageRoot() . '/composer.json'), true, 512, JSON_THROW_ON_ERROR);
+
+        foreach ($tooling['require'] as $package => $required) {
+            if (!str_contains($package, '/') || !isset($caller['require-dev'][$package])) {
+                continue;
+            }
+
+            $actual = $caller['require-dev'][$package];
+
+            try {
+                if (Intervals::isSubsetOf(self::parseVersionConstraint($required), self::parseVersionConstraint($actual))) {
+                    echo "warning: require-dev.{$package} can be removed; psbits/qa already requires {$required}, fully covered by your constraint {$actual}\n";
+                }
+            } catch (UnexpectedValueException $exception) {
+                echo "warning: require-dev.{$package} has an invalid version constraint: " . $exception->getMessage() . "\n";
+            }
+        }
     }
 
     /**

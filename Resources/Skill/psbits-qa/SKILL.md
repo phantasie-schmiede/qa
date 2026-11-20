@@ -59,6 +59,24 @@ The QA tooling lives in the `psbits/qa` package (installed into
 
 ## Shared QA scripts (synced by `bin/qa sync`)
 
+QA supplies Composer Normalize, PHPStan, TypoScript lint, PHPUnit, the testing
+framework and `saschaegerer/phpstan-typo3` as regular dependencies, alongside
+the PHP style tools. No duplicate root declarations are required.
+`qa sync` (including `--dry-run`) and `qa check` warn about existing root
+`require-dev` pins for `saschaegerer/phpstan-typo3` that do not intersect each branch
+needed by the caller's TYPO3 constraint (`^2.1` for v13, `^3.1` for v14).
+Equivalent and narrower intersecting constraints are accepted via Composer
+Semver. This checks declared coverage only; matrix dependency resolution remains
+necessary. Tools supplied by `psbits/qa` need no duplicate root requirement.
+These commands also warn about redundant `require-dev` entries for direct
+package dependencies read from `psbits/qa`'s own `composer.json`. Removal is
+recommended only when the QA constraint is a subset of the caller constraint;
+narrower caller pins, platform requirements and transitive-only dependencies
+are excluded. Entries are never removed automatically.
+Sync also adds missing root `allow-plugins` authorizations for Composer Normalize
+and the PHP_CodeSniffer Composer installer, preserving explicit disables. Check
+fails when a required authorization is missing or disabled.
+
 The caller `composer.json` `scripts` section is part of the package-managed
 state. `bin/qa sync` adds the full set of shared scripts when missing, each
 with its own applicability condition, so only scripts that fit the
