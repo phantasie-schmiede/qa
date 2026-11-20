@@ -22,9 +22,12 @@
 #
 # A failed leg does not stop the matrix; every leg is announced and concluded
 # with a banner, a summary table is printed at the end, and the script exits
-# non-zero if any leg failed. Afterwards the compose project is torn down
-# again, so no database container keeps running (the trap also covers
-# interrupted runs; the named composer-home volume is kept).
+# non-zero if any leg failed. Afterwards the compose project is torn down, so
+# no database container keeps running, and the host Composer installation is
+# restored (composer install --no-scripts): the legs resolve their
+# dependencies in the bind-mounted repository, so without the restore the
+# matrix PHP version - not the host's - would remain in .Build/vendor. The
+# trap also covers interrupted runs; the named composer-home volume is kept.
 #
 set -eu
 
@@ -83,9 +86,24 @@ print_summary() {
     fi
 }
 
+# The matrix legs run composer in the bind-mounted repository, so after the
+# run the host .Build/vendor carries the matrix PHP version (default 8.4),
+# not the host's. Restore the host installation from its lock file;
+# --no-scripts keeps the repository's post-install scripts (npm install,
+# qa sync) out of the test run. A failed restore does not mask the matrix
+# result: it is reported, and composer install can be rerun manually.
+restore_host_install() {
+    banner "Host installation (composer install --no-scripts)"
+
+    if ! composer install --no-scripts --no-interaction; then
+        echo "Warning: could not restore the host Composer installation; run composer install manually." >&2
+    fi
+}
+
 on_exit() {
     cleanup
     print_summary
+    restore_host_install
 }
 trap on_exit EXIT
 

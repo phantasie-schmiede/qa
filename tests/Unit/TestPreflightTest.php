@@ -72,6 +72,20 @@ final class TestPreflightTest extends TestCase
      * @throws ExpectationFailedException
      * @throws ValueError
      */
+    public function testFailedLegStillRestoresHostComposerInstallation(): void
+    {
+        $this->tool('docker', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/docker-calls"; [ "$4" != run ]');
+        $this->tool('composer', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/composer-calls"');
+        [$code, $output] = $this->runScript('runDockerTests.sh', ['13.4']);
+        self::assertNotSame(0, $code, $output);
+        self::assertSame("install --no-scripts --no-interaction\n", file_get_contents($this->root . '/composer-calls'));
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
     public function testInvalidComposerFileIsReported(): void
     {
         file_put_contents($this->root . '/composer.json', 'invalid');
@@ -183,6 +197,20 @@ final class TestPreflightTest extends TestCase
         self::assertSame(1, $code);
         self::assertStringContainsString('Missing PHP extension: psbits_missing', $output);
         $this->assertNoTestRun();
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
+    public function testSingleLegRestoresHostComposerInstallation(): void
+    {
+        $this->docker('');
+        $this->tool('composer', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/composer-calls"');
+        [$code, $output] = $this->runScript('runDockerTests.sh', ['13.4']);
+        self::assertSame(0, $code, $output);
+        self::assertSame("install --no-scripts --no-interaction\n", file_get_contents($this->root . '/composer-calls'));
     }
 
     /**
