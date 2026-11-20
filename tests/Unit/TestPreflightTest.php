@@ -100,6 +100,31 @@ final class TestPreflightTest extends TestCase
      * @throws ExpectationFailedException
      * @throws ValueError
      */
+    public function testLowestLegUsesCurrentQaInfrastructure(): void
+    {
+        foreach (['cp', 'grep', 'rm'] as $tool) {
+            symlink('/usr/bin/' . $tool, $this->root . '/bin/' . $tool);
+        }
+
+        $this->tool('php', 'exec ' . escapeshellarg(PHP_BINARY) . ' "$@"');
+        $this->tool('composer', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/composer-calls"; [ "$1" != update ]');
+        [$code, $output] = $this->runScript('runTests.sh', ['13.4', '--lowest']);
+        self::assertSame(1, $code, $output);
+        self::assertStringContainsString(
+            'require --dev --no-update --no-interaction psbits/qa:dev-main',
+            (string) file_get_contents($this->root . '/composer-calls'),
+        );
+        self::assertStringNotContainsString(
+            'phpunit/phpunit:',
+            (string) file_get_contents($this->root . '/composer-calls'),
+        );
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
     public function testMissingCommandsStopLocalMatrixBeforeAnyLeg(): void
     {
         [$code, $output] = $this->runScript('runLocalTests.sh');

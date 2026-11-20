@@ -133,6 +133,9 @@ fi
 # 9.5.0 and class-alias-loader 1.2.2) the library is required explicitly in
 # the generated composer file.
 if [ -n "$LOWEST" ]; then
+    # Test production dependencies at their lowest versions, not historical
+    # QA releases that do not provide the current test infrastructure.
+    composer require --dev --no-update --no-interaction psbits/qa:dev-main
     composer require --dev --no-update --no-interaction composer/class-map-generator:^1.3.4
 fi
 

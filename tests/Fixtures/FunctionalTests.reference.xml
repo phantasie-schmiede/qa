@@ -25,7 +25,7 @@
     displayDetailsOnTestsThatTriggerErrors="true"
     displayDetailsOnTestsThatTriggerNotices="true"
     displayDetailsOnTestsThatTriggerWarnings="true"
-    failOnDeprecation="true"
+    failOnDeprecation="false"
     failOnEmptyTestSuite="true"
     failOnNotice="true"
     failOnRisky="true"

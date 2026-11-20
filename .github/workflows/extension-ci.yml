@@ -136,6 +136,7 @@ jobs:
         run: >-
           composer update
           --with "typo3/cms-core:^${{ matrix.typo3 }}"
+          ${{ matrix.lowest && '--with psbits/qa:dev-main' || '' }}
           -W
           --prefer-dist
           --no-interaction

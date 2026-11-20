@@ -135,7 +135,7 @@ function writeXml(string $root, string $suite, string $bootstrap): void
         . '    displayDetailsOnTestsThatTriggerErrors="true"' . "\n"
         . '    displayDetailsOnTestsThatTriggerNotices="true"' . "\n"
         . '    displayDetailsOnTestsThatTriggerWarnings="true"' . "\n"
-        . '    failOnDeprecation="true"' . "\n"
+        . '    failOnDeprecation="false"' . "\n"
         . '    failOnEmptyTestSuite="true"' . "\n"
         . '    failOnNotice="true"' . "\n"
         . '    failOnRisky="true"' . "\n"

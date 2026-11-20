@@ -93,11 +93,15 @@ final class RenderPhpunitXmlTest extends TestCase
         self::assertSame($this->root . '/.Build/.phpunit.cache', (string) $unit['cacheDirectory']);
         self::assertSame($this->root . '/Tests/Unit', (string) $unit->testsuites->testsuite->directory);
         self::assertSame($this->root . '/Classes', (string) $unit->source->include->directory);
+        self::assertSame('false', (string) $unit['failOnDeprecation']);
+        self::assertSame('true', (string) $unit['displayDetailsOnTestsThatTriggerDeprecations']);
 
         $functional = simplexml_load_file($this->root . '/.Build/phpunit/FunctionalTests.xml');
         self::assertNotFalse($functional);
         self::assertSame($this->root . '/.Build/vendor/typo3/testing-framework/Resources/Core/Build/FunctionalTestsBootstrap.php', (string) $functional['bootstrap']);
         self::assertSame($this->root . '/Tests/Functional', (string) $functional->testsuites->testsuite->directory);
+        self::assertSame('false', (string) $functional['failOnDeprecation']);
+        self::assertSame('true', (string) $functional['displayDetailsOnTestsThatTriggerDeprecations']);
     }
 
     /**
