@@ -35,11 +35,19 @@ final class ApplicationTest extends TestCase
         'test:unit'         => 'phpunit',
         'validate:composer' => 'composer validate --no-check-publish',
     ];
+    private const array LEGACY_PRETTIER_COMMANDS = [
+        'fix:htmlxml'  => 'prettier --config .Build/vendor/psbits/qa/Resources/Quality/prettier.config.mjs --ignore-path Build/Quality/.prettierignore --write "**/*.{html,xml,xlf}"',
+        'lint:htmlxml' => 'prettier --config .Build/vendor/psbits/qa/Resources/Quality/prettier.config.mjs --ignore-path Build/Quality/.prettierignore --check "**/*.{html,xml,xlf}"',
+    ];
     private const array MINIMAL_SCRIPTS = [
         'post-install-cmd' => ['.Build/bin/qa sync'],
         'post-update-cmd'  => ['.Build/bin/qa sync'],
         'test:all'         => ['@test:unit'],
         'test:unit'        => 'phpunit',
+    ];
+    private const array PRETTIER_RUNNER_COMMANDS = [
+        'fix:htmlxml'  => 'node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs fix',
+        'lint:htmlxml' => 'node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs check',
     ];
 
     private string $root;
@@ -150,6 +158,27 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('FAIL: lint:all deviates from the expected standard', $output);
         self::assertStringContainsString('missing: @lint:xlf', $output);
         self::assertStringContainsString('"lint:all": [', $output);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testCheckFailsOnDeviatedPrettierScripts(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        $this->writeHtmlXmlFile();
+        $this->writeNpmScripts(['fix:htmlxml', 'lint:htmlxml'], self::LEGACY_PRETTIER_COMMANDS);
+        chdir($this->root);
+
+        [$exit, $output] = $this->check();
+
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: npm script fix:htmlxml deviates from the expected command (run qa sync and commit)', $output);
+        self::assertStringContainsString('FAIL: npm script lint:htmlxml deviates from the expected command (run qa sync and commit)', $output);
+        self::assertStringContainsString('  expected: node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs check', $output);
+
+        $this->sync();
+        self::assertSame(0, $this->check()[0]);
     }
 
     /**
@@ -485,6 +514,7 @@ final class ApplicationTest extends TestCase
 
         self::assertSame('npm run lint:classes', $scripts['lint:classes']);
         self::assertSame('npm run fix:htmlxml', $scripts['fix:htmlxml']);
+        self::assertSame('npm run lint:htmlxml', $scripts['lint:htmlxml']);
         self::assertSame('composer normalize', $scripts['fix:composer']);
         self::assertSame('composer normalize --dry-run --diff --no-check-lock --no-update-lock', $scripts['lint:composer']);
         self::assertSame('npm run fix:json', $scripts['fix:json']);
@@ -502,6 +532,14 @@ final class ApplicationTest extends TestCase
         );
         self::assertSame(['@fix:classes', '@fix:composer', '@fix:htmlxml', '@fix:json', '@fix:throws', '@fix:xlf', '@fix:php'], $scripts['fix:all']);
         self::assertSame(['@fix:all', '@lint:all', '@test:all'], $scripts['qa']);
+        /*
+         * The npm scripts are already managed: the sync must keep the
+         * shared Prettier runner commands untouched.
+         */
+        self::assertSame(
+            self::PRETTIER_RUNNER_COMMANDS,
+            array_intersect_key($this->npmScripts(), self::PRETTIER_RUNNER_COMMANDS),
+        );
         self::assertSame(0, Application::execute(['qa', 'check']));
     }
 
@@ -607,6 +645,86 @@ final class ApplicationTest extends TestCase
         $this->sync();
         self::assertSame($before, file_get_contents($this->root . '/composer.json'));
         self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncAddsPrettierScriptsToEmptyScriptsBlock(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        $this->writeHtmlXmlFile();
+        file_put_contents(
+            $this->root . '/package.json',
+            implode("\n", [
+                '{',
+                '  "name": "fixture-extension",',
+                '  "scripts": {},',
+                '  "license": "GPL-3.0-or-later"',
+                '}',
+            ]) . "\n",
+        );
+        chdir($this->root);
+
+        $output = $this->sync();
+
+        self::assertStringContainsString('added npm script fix:htmlxml', $output);
+        self::assertStringContainsString('added npm script lint:htmlxml', $output);
+        self::assertSame(
+            implode("\n", [
+                '{',
+                '  "name": "fixture-extension",',
+                '  "scripts": {',
+                '    "fix:htmlxml": "node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs fix",',
+                '    "lint:htmlxml": "node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs check"',
+                '  },',
+                '  "license": "GPL-3.0-or-later"',
+                '}',
+            ]) . "\n",
+            (string) file_get_contents($this->root . '/package.json'),
+        );
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws JsonException
+     */
+    public function testSyncAddsPrettierScriptsWithoutScriptsKey(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        $this->writeHtmlXmlFile();
+        $file   = $this->root . '/package.json';
+        $before = '{"name":"fixture-extension","custom":{},"files":[]}';
+        file_put_contents($file, $before);
+        chdir($this->root);
+
+        [$exit, $output] = $this->check();
+        self::assertSame(1, $exit);
+        self::assertStringContainsString('FAIL: npm script lint:htmlxml missing', $output);
+
+        ob_start();
+        $exit   = Application::execute(['qa', 'sync', '--dry-run']);
+        $output = (string) ob_get_clean();
+        self::assertSame(0, $exit);
+        self::assertStringContainsString('would add npm script lint:htmlxml', $output);
+        self::assertSame($before, file_get_contents($file));
+
+        $this->sync();
+        $data = json_decode((string) file_get_contents($file), false, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('fixture-extension', $data->name);
+        self::assertInstanceOf(stdClass::class, $data->custom);
+        self::assertSame([], $data->files);
+        self::assertSame(self::PRETTIER_RUNNER_COMMANDS, (array) $data->scripts);
+        self::assertSame('npm run lint:htmlxml', $this->composerScripts()['lint:htmlxml']);
+        self::assertSame(0, $this->check()[0]);
+
+        // An already synchronized file is not reformatted or rewritten.
+        $content = json_encode($data, JSON_THROW_ON_ERROR);
+        file_put_contents($file, $content);
+        $this->sync();
+        self::assertSame($content, file_get_contents($file));
     }
 
     /**
@@ -735,6 +853,41 @@ final class ApplicationTest extends TestCase
         self::assertArrayNotHasKey('lint:xlf', $scripts);
         self::assertSame(['@audit:composer', '@lint:composer', '@lint:js', '@lint:json', '@lint:scss', '@validate:composer'], $scripts['lint:all']);
         self::assertSame(['@fix:composer', '@fix:json'], $scripts['fix:all']);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncConflictsOnCustomPrettierScripts(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        $this->writeHtmlXmlFile();
+        $this->writeNpmScripts(
+            ['fix:htmlxml', 'lint:htmlxml'],
+            ['fix:htmlxml' => self::PRETTIER_RUNNER_COMMANDS['fix:htmlxml'], 'lint:htmlxml' => 'prettier --check "Resources/**/*.html"'],
+        );
+        chdir($this->root);
+
+        $before   = file_get_contents($this->root . '/package.json');
+        $composer = file_get_contents($this->root . '/composer.json');
+
+        foreach ([['qa', 'sync'], ['qa', 'sync', '--dry-run']] as $arguments) {
+            ob_start();
+            $exit   = Application::execute($arguments);
+            $output = (string) ob_get_clean();
+            self::assertSame(1, $exit);
+            self::assertStringContainsString('CONFLICT: npm script lint:htmlxml in package.json (custom command: prettier --check "Resources/**/*.html")', $output);
+            self::assertSame($before, file_get_contents($this->root . '/package.json'));
+            self::assertSame($composer, file_get_contents($this->root . '/composer.json'));
+        }
+
+        // qa sync --force explicitly replaces the custom command.
+        self::assertSame(0, Application::execute(['qa', 'sync', '--force']));
+        self::assertSame(
+            self::PRETTIER_RUNNER_COMMANDS,
+            array_intersect_key($this->npmScripts(), self::PRETTIER_RUNNER_COMMANDS),
+        );
+        self::assertSame(0, $this->check()[0]);
     }
 
     /**
@@ -968,6 +1121,62 @@ final class ApplicationTest extends TestCase
         self::assertStringContainsString('FAIL: allow-plugins.dealerdirect/phpcodesniffer-composer-installer missing or not true (run qa sync and commit)', $output);
     }
 
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws JsonException
+     */
+    public function testSyncMigratesLegacyPrettierScripts(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        $this->writeHtmlXmlFile();
+        file_put_contents(
+            $this->root . '/package.json',
+            implode("\n", [
+                '{',
+                '  "name": "fixture-extension",',
+                '  "version": "0.1.0",',
+                '  "scripts": {',
+                '    "fix:classes": "node .Build/vendor/psbits/qa/Resources/Quality/lint-class-attributes.mjs",',
+                '    "fix:htmlxml": ' . json_encode(self::LEGACY_PRETTIER_COMMANDS['fix:htmlxml'], JSON_UNESCAPED_SLASHES) . ',',
+                '    "lint:classes": "node .Build/vendor/psbits/qa/Resources/Quality/lint-class-attributes.mjs --dry-run",',
+                '    "lint:htmlxml": ' . json_encode(self::LEGACY_PRETTIER_COMMANDS['lint:htmlxml'], JSON_UNESCAPED_SLASHES),
+                '  },',
+                '  "repository": {',
+                '    "type": "git",',
+                '    "url": "git+https:\/\/github.com\/psbits\/fixture.git"',
+                '  }',
+                '}',
+            ]) . "\n",
+        );
+        chdir($this->root);
+
+        $output = $this->sync();
+
+        self::assertStringContainsString('updated npm script fix:htmlxml', $output);
+        self::assertStringContainsString('updated npm script lint:htmlxml', $output);
+
+        $content = (string) file_get_contents($this->root . '/package.json');
+        self::assertStringContainsString('    "fix:htmlxml": "node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs fix",', $content);
+        self::assertStringContainsString('    "lint:htmlxml": "node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs check"', $content);
+        $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('fixture-extension', $data['name']);
+        self::assertSame('0.1.0', $data['version']);
+        self::assertSame(['type' => 'git', 'url' => 'git+https://github.com/psbits/fixture.git'], $data['repository']);
+        self::assertSame('node .Build/vendor/psbits/qa/Resources/Quality/lint-class-attributes.mjs', $this->npmScripts()['fix:classes']);
+
+        $scripts = $this->composerScripts();
+        self::assertSame('npm run fix:htmlxml', $scripts['fix:htmlxml']);
+        self::assertSame('npm run lint:htmlxml', $scripts['lint:htmlxml']);
+        self::assertContains('@fix:htmlxml', $scripts['fix:all']);
+        self::assertContains('@lint:htmlxml', $scripts['lint:all']);
+
+        $before = $content;
+        $this->sync();
+        self::assertSame($before, file_get_contents($this->root . '/package.json'));
+        self::assertSame(0, $this->check()[0]);
+    }
+
     /** @throws ExpectationFailedException */
     public function testSyncMissingSkillTargetDoesNotWriteFiles(): void
     {
@@ -1127,6 +1336,27 @@ final class ApplicationTest extends TestCase
      * @throws Exception
      * @throws ExpectationFailedException
      */
+    public function testSyncSkipsPrettierScriptsForRepositoriesWithoutPrettierFiles(): void
+    {
+        $this->writeRepositoryFixtures(self::MINIMAL_SCRIPTS, false, false);
+        $this->writeNpmScripts(['fix:htmlxml', 'lint:htmlxml'], self::LEGACY_PRETTIER_COMMANDS);
+        chdir($this->root);
+
+        $before = file_get_contents($this->root . '/package.json');
+        $this->sync();
+
+        self::assertSame($before, file_get_contents($this->root . '/package.json'));
+
+        $scripts = $this->composerScripts();
+        self::assertArrayNotHasKey('fix:htmlxml', $scripts);
+        self::assertArrayNotHasKey('lint:htmlxml', $scripts);
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     */
     public function testSyncSkipsSharedScriptsOfUnapplicableRepositories(): void
     {
         $this->writeRepositoryFixtures(self::BASE_SCRIPTS, withXlf: false);
@@ -1203,6 +1433,16 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @return array<string, string>
+     */
+    private function npmScripts(): array
+    {
+        $data = json_decode((string) file_get_contents($this->root . '/package.json'), true);
+
+        return $data['scripts'];
+    }
+
+    /**
      * @throws UnexpectedValueException
      */
     private function removeTree(string $path): void
@@ -1269,12 +1509,21 @@ final class ApplicationTest extends TestCase
         file_put_contents($qualityDir . '/.php-cs-fixer.dist.php', "<?php\nreturn [];\n");
     }
 
-    /**
-     * @param list<string> $scripts
-     */
-    private function writeNpmScripts(array $scripts): void
+    private function writeHtmlXmlFile(): void
     {
-        $data = ['name' => 'fixture-extension', 'scripts' => array_fill_keys($scripts, 'echo ok')];
+        $templateDir = $this->root . '/Resources/Private/Templates';
+        mkdir($templateDir, 0755, true);
+        file_put_contents($templateDir . '/Example.html', '<div></div>' . "\n");
+    }
+
+    /**
+     * @param list<string>          $scripts
+     * @param array<string, string> $commands
+     */
+    private function writeNpmScripts(array $scripts, array $commands = self::PRETTIER_RUNNER_COMMANDS): void
+    {
+        $commands = array_intersect_key($commands, array_flip($scripts));
+        $data     = ['name' => 'fixture-extension', 'scripts' => array_merge(array_fill_keys($scripts, 'echo ok'), $commands)];
         file_put_contents(
             $this->root . '/package.json',
             json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",

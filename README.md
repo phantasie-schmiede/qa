@@ -10,8 +10,9 @@ holds the single source of truth for:
 - linter and fixer configuration - `Resources/Quality/` (php-cs-fixer incl. the
   shared `PSBits/*` custom fixers, the `phpTools.php` runner behind
   `lint:php`/`fix:php`, PHP_CodeSniffer with the Slevomat
-  control-structure spacing ruleset, PHPStan baseline, prettier, yamllint,
-  typoscript-lint, lint-class-attributes)
+  control-structure spacing ruleset, PHPStan baseline, the Prettier
+  configuration and the `prettier.mjs` runner behind `lint:htmlxml`/
+  `fix:htmlxml`, yamllint, typoscript-lint, lint-class-attributes)
 - the shared skills (`psbits-qa`, `psbits-foundation`, `psbits-v14-compat`) and
   the git pre-commit hook - `Resources/Skill/`, `Resources/GitHooks/`, installed
   by `bin/qa sync`
@@ -111,11 +112,12 @@ existing lines - and `qa check` fails when an entry is missing.
 
 ### Safe synchronization
 
-`qa sync --dry-run` previews hook, workflow, skill, .gitignore and Composer
-script changes without writing files. Conflicting existing contents abort the entire sync
-before any file is changed. Review them and use `qa sync --force` only when
-you explicitly want to replace them (including existing skill directories).
-Combine both flags to preview a forced takeover.
+`qa sync --dry-run` previews hook, workflow, skill, .gitignore, Composer
+script and `package.json` npm script changes without writing files.
+Conflicting existing contents abort the entire sync before any file is
+changed. Review them and use `qa sync --force` only when you explicitly want
+to replace them (including existing skill directories). Combine both flags to
+preview a forced takeover.
 
 Files identical to the package templates or carrying the comment
 `This file is managed by \`qa sync\`` are package-managed and updated normally.
@@ -135,7 +137,9 @@ The extension keeps only its repo-specific QA files:
 the repository's analysis scope), `Build/Quality/.phpcs.xml.dist` (thin shim
 over the shared PHP_CodeSniffer ruleset, declaring the analysis scope),
 `Build/Quality/coverage-baseline.json` and `Build/Quality/.prettierignore`
-(where applicable). The composer scripts point at the package resources, e.g.
+(where applicable). The `lint:htmlxml`/`fix:htmlxml` entries of
+`package.json` are the only managed scripts of that file. The composer scripts
+point at the package resources, e.g.
 
 ```
 php .Build/vendor/psbits/qa/Resources/Testing/renderPhpunitXml.php unit
@@ -149,6 +153,23 @@ that exists in the repository and passes the CLI paths to every tool that
 runs. When upgrading to the package version that introduced the runner,
 the existing `lint:php`/`fix:php` lines are updated manually - `qa sync`
 never rewrites existing script entries.
+
+The `lint:htmlxml`/`fix:htmlxml` npm scripts are managed differently:
+`qa sync` keeps them in sync in the caller `package.json` - it adds them
+when missing, migrates the exact previous prettier command (the root-wide
+glob `**/*.{html,xml,xlf}`) to the shared runner
+`node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs check|fix`,
+and reports any other custom command as a conflict that only `qa sync
+--force` replaces. The runner formats exactly the Prettier scope of an
+extension - `Classes`, `Configuration`, `Resources` and `Tests` - with the
+shared Prettier configuration and the repository's
+`Build/Quality/.prettierignore` (when present), so transient directories
+below the repository root are never scanned. The tooling applies to
+repositories with html, xml or xlf files in that scope and a `package.json`
+regardless of whether a scripts object already exists; a missing scripts
+object is created. `qa check` fails when the managed commands are missing or
+deviate. All other npm scripts and field values are preserved. Changed files
+are written as JSON with two-space indentation; unchanged files are not rewritten.
 
 Besides the scripts, `qa sync` keeps the `config.allow-plugins` entries the
 shared tooling requires in the caller `composer.json` (currently the

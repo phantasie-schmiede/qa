@@ -110,10 +110,11 @@ repository are added:
   `config.allow-plugins` entry in the caller `composer.json` (added when
   missing, reported without modification when explicitly disabled,
   verified by `qa check`))
-- `lint:classes` / `fix:classes`, `lint:htmlxml` / `fix:htmlxml`,
-  `lint:json` / `fix:json`, `lint:js`, `lint:scss` (npm proxies, need the
-  matching npm script in the repository `package.json`; the json pair runs
-  Prettier on `package.json`)
+- `lint:classes` / `fix:classes`, `lint:json` / `fix:json`, `lint:js`,
+  `lint:scss` (npm proxies, need the matching npm script in the repository
+  `package.json`; the json pair runs Prettier on `package.json`)
+- `lint:htmlxml` / `fix:htmlxml` (npm proxies; the npm scripts they wrap
+  are package-managed, see below)
 - `lint:typoscript` (needs at least one `.typoscript` file below
   `Configuration/TypoScript`)
 - `lint:yaml` (needs the `Configuration` directory)
@@ -125,6 +126,22 @@ repository are added:
   audit loop per major, then merges the per-major sets into one
   docblock with `// t3:N` markers on the major-specific lines, needs
   the PHPStan configuration and network access for the core switches)
+
+The `lint:htmlxml` / `fix:htmlxml` npm scripts are package-managed:
+`bin/qa sync` adds them when missing, migrates the exact legacy command
+(`prettier --config ... --ignore-path ... --check/--write
+"**/*.{html,xml,xlf}"`) to the shared Prettier runner, and reports every
+other custom command as a conflict that only `qa sync --force` replaces.
+The runner (`Resources/Quality/prettier.mjs`) formats exactly the Prettier
+scope of an extension - `Classes`, `Configuration`, `Resources` and
+`Tests` - so transient directories below the repository root (`var`,
+`.Build`, `node_modules`, ...) are never scanned; the repository's
+`Build/Quality/.prettierignore` still applies. The tooling only applies to
+repositories with html, xml or xlf files in that scope and a `package.json`
+regardless of whether a scripts object already exists; a missing scripts
+object is created. `qa check` fails when the managed commands are missing or
+deviate. All other npm scripts and field values are preserved. Changed files
+are written as JSON with two-space indentation; unchanged files are not rewritten.
 
 `fix:throws` uses disposable repository copies and Composer installations under
 `.Build/throws-fix/<run-id>/<core>`. Normal vendor/bin and Composer files remain
@@ -260,6 +277,9 @@ Only these QA files remain in the repository (everything else is shared):
 - `composer.json` - the `scripts` section and the `config.allow-plugins`
   entries of the shared tooling are kept in sync by `bin/qa sync`;
   repo-specific scripts (e.g. `test:unit:update-fixtures`) are never touched
+- `package.json` - the `lint:htmlxml` / `fix:htmlxml` entries are managed by
+  `bin/qa sync` (the shared Prettier runner commands); every other npm script
+  and all other field values are preserved
 - `.gitignore` - the shared runtime entries (`.Build/`,
   `.php-cs-fixer.cache`, `Build/Quality/.phpstan/`, `composer-matrix.json`,
   `composer-matrix.lock`, `packages/autoload-tests/`, `var/`) are appended by

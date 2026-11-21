@@ -53,6 +53,7 @@ use function rmdir;
 use function sort;
 use function str_contains;
 use function str_ends_with;
+use function str_repeat;
 use function str_starts_with;
 use function strcmp;
 use function strlen;
@@ -120,6 +121,28 @@ final class Application
     private const array LINT_ALL_MEMBERS = ['@analyze:php', '@audit:composer', '@validate:composer'];
 
     /**
+     * The npm scripts the shared tooling manages in the caller
+     * package.json: the shared Prettier runner behind lint:htmlxml and
+     * fix:htmlxml. "expected" is the managed command, "legacy" the exact
+     * prettier command of the previous tooling that sync migrates
+     * automatically; every other existing command is a conflict that only
+     * qa sync --force replaces. The commands run in the caller repository
+     * root, where npm keeps the prettier binary in node_modules/.bin.
+     *
+     * @var array<string, array{expected: string, legacy: string}>
+     */
+    private const array NPM_SCRIPTS = [
+        'fix:htmlxml'  => [
+            'expected' => 'node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs fix',
+            'legacy'   => 'prettier --config .Build/vendor/psbits/qa/Resources/Quality/prettier.config.mjs --ignore-path Build/Quality/.prettierignore --write "**/*.{html,xml,xlf}"',
+        ],
+        'lint:htmlxml' => [
+            'expected' => 'node .Build/vendor/psbits/qa/Resources/Quality/prettier.mjs check',
+            'legacy'   => 'prettier --config .Build/vendor/psbits/qa/Resources/Quality/prettier.config.mjs --ignore-path Build/Quality/.prettierignore --check "**/*.{html,xml,xlf}"',
+        ],
+    ];
+
+    /**
      * The shared QA scripts that sync adds to the caller composer.json when
      * missing. The condition decides whether the script applies to a
      * repository at all: "always" does, "xlf" requires *.xlf files below the
@@ -131,7 +154,10 @@ final class Application
      * one .typoscript file below Configuration/TypoScript, and
      * "npm:<script>" the npm script in the caller package.json (the composer
      * script is its proxy), and "composer:<script>" requires that script in
-     * the caller composer.json. "tests:<suite>" requires *Test.php files in
+     * the caller composer.json. "htmlxml" requires the managed htmlxml npm
+     * scripts (html, xml or xlf files in the Prettier scope and a
+     * package.json - see NPM_SCRIPTS).
+     * "tests:<suite>" requires *Test.php files in
      * that suite, "tests" either suite, and "docker" tests or an existing
      * test:docker script.
      *
@@ -143,14 +169,14 @@ final class Application
         ['command' => ['Composer\\Config::disableProcessTimeout', 'sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/buildTestImages.sh'], 'condition' => 'docker', 'name' => 'docker:images'],
         ['command' => 'npm run fix:classes', 'condition' => 'npm:fix:classes', 'name' => 'fix:classes'],
         ['command' => 'composer normalize', 'condition' => 'always', 'name' => 'fix:composer'],
-        ['command' => 'npm run fix:htmlxml', 'condition' => 'npm:fix:htmlxml', 'name' => 'fix:htmlxml'],
+        ['command' => 'npm run fix:htmlxml', 'condition' => 'htmlxml', 'name' => 'fix:htmlxml'],
         ['command' => 'npm run fix:json', 'condition' => 'npm:fix:json', 'name' => 'fix:json'],
         ['command' => 'php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php fix', 'condition' => 'php', 'name' => 'fix:php'],
         ['command' => '.Build/bin/qa throws-fix', 'condition' => 'phpstan', 'name' => 'fix:throws'],
         ['command' => '.Build/bin/qa xlf-fix', 'condition' => 'xlf', 'name' => 'fix:xlf'],
         ['command' => 'npm run lint:classes', 'condition' => 'npm:lint:classes', 'name' => 'lint:classes'],
         ['command' => 'composer normalize --dry-run --diff --no-check-lock --no-update-lock', 'condition' => 'always', 'name' => 'lint:composer'],
-        ['command' => 'npm run lint:htmlxml', 'condition' => 'npm:lint:htmlxml', 'name' => 'lint:htmlxml'],
+        ['command' => 'npm run lint:htmlxml', 'condition' => 'htmlxml', 'name' => 'lint:htmlxml'],
         ['command' => 'npm run lint:js', 'condition' => 'npm:lint:js', 'name' => 'lint:js'],
         ['command' => 'npm run lint:json', 'condition' => 'npm:lint:json', 'name' => 'lint:json'],
         ['command' => 'php .Build/vendor/psbits/qa/Resources/Quality/phpTools.php lint', 'condition' => 'php', 'name' => 'lint:php'],
@@ -184,17 +210,23 @@ final class Application
                     composer.json scripts (add the shared scripts when
                     missing, test scripts based on *Test.php suites,
                     create test:all, lint:all, fix:all and qa when
-                    missing), add the Composer allow-plugins entries the
-                    shared tooling requires, append the runtime .gitignore
-                    entries, and report existing aggregates that deviate
-                    from the expected standard; warn about redundant dev
-                    requirements and core-blocking pins
+                    missing), sync the htmlxml npm scripts of the caller
+                    package.json (add them when missing, migrate the
+                    legacy prettier command to the shared Prettier
+                    runner; a custom command is a conflict that --force
+                    replaces), add the Composer allow-plugins entries the
+                    shared tooling requires, append the runtime
+                    .gitignore entries, and report existing aggregates
+                    that deviate from the expected standard; warn about
+                    redundant dev requirements and core-blocking pins
       qa check      Verify hook, skill links and caller CI workflow match
                     the installed package, verify that the caller
-                    composer.json carries the shared QA scripts and the
-                    required Composer allow-plugins entries, and that the
-                    caller .gitignore carries the runtime entries (CI
-                    gate); dev requirement warnings do not fail the check
+                    composer.json carries the shared QA scripts, that the
+                    caller package.json carries the managed htmlxml npm
+                    scripts and the required Composer allow-plugins
+                    entries, and that the caller .gitignore carries the
+                    runtime entries (CI gate); dev requirement warnings do
+                    not fail the check
       qa sync --dry-run
                     Preview changes without writing files; conflicts fail
       qa sync --force
@@ -363,6 +395,32 @@ final class Application
         return $standards;
     }
 
+    /**
+     * Applies the managed npm script actions while preserving all other
+     * values. A missing scripts object is created.
+     *
+     * @param array<string, array{action: string, command: string}> $actions
+     * @throws JsonException
+     */
+    private static function applyNpmScriptActions(string $content, array $actions): string
+    {
+        $data    = json_decode($content, false, 512, JSON_THROW_ON_ERROR);
+        $scripts = (array) ($data->scripts ?? []);
+
+        foreach ($actions as $name => $action) {
+            if ('skip' === $action['action']) {
+                continue;
+            }
+
+            $scripts[$name] = $action['command'];
+        }
+
+        $data->scripts = (object) $scripts;
+        $encoded       = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+        return preg_replace_callback('/^ +/m', static fn(array $match): string => str_repeat(' ', intdiv(strlen($match[0]), 2)), $encoded) . "\n";
+    }
+
     private static function callerWorkflow(string $root): string
     {
         return $root . '/.github/workflows/ci.yml';
@@ -422,6 +480,7 @@ final class Application
         }
 
         $failed |= self::verifyScripts($root);
+        $failed |= self::verifyNpmScripts($root);
         $failed |= self::verifyAllowPlugins($root);
         $failed |= self::verifyGitignore($root);
         self::warnDevRequirements($root);
@@ -454,6 +513,35 @@ final class Application
         $contentB = file_get_contents($b);
 
         return false !== $contentA && $contentA === $contentB;
+    }
+
+    /**
+     * Whether the repository carries html, xml or xlf files in the shared
+     * Prettier scope (Classes, Configuration, Resources or Tests) - the
+     * htmlxml tooling (the runner command in package.json and its composer
+     * proxy) only applies to such repositories.
+     *
+     * @throws UnexpectedValueException
+     */
+    private static function hasHtmlXmlFiles(string $root): bool
+    {
+        foreach (['Classes', 'Configuration', 'Resources', 'Tests'] as $directory) {
+            $path = $root . '/' . $directory;
+
+            if (!is_dir($path)) {
+                continue;
+            }
+
+            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS));
+
+            foreach ($iterator as $item) {
+                if ($item->isFile() && in_array(strtolower($item->getExtension()), ['html', 'xlf', 'xml'], true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -558,6 +646,87 @@ final class Application
     }
 
     /**
+     * The sync action for every managed npm script (see NPM_SCRIPTS):
+     * "skip" when the expected command is in place, "add" when the script
+     * is missing, "update" for the known legacy command, "replace" for a
+     * custom command with qa sync --force and "conflict" for a custom
+     * command without. The "command" carries the current value of a
+     * conflict and the expected value of every other action. Repositories
+     * without html, xml or xlf files in the Prettier scope, without a
+     * package.json are not managed. A missing scripts object is created.
+     *
+     * @return array<string, array{action: string, command: string}>
+     * @throws RuntimeException
+     * @throws UnexpectedValueException
+     */
+    private static function npmScriptActions(string $root, bool $force = false): array
+    {
+        $file = $root . '/package.json';
+
+        if (!is_file($file) || !self::hasHtmlXmlFiles($root)) {
+            return [];
+        }
+
+        $data = json_decode((string) file_get_contents($file), true);
+
+        if (!is_array($data)) {
+            throw new RuntimeException('could not parse ' . $file);
+        }
+
+        if (array_key_exists('scripts', $data) && !is_array($data['scripts'])) {
+            return [];
+        }
+
+        $scripts = $data['scripts'] ?? [];
+        $actions = [];
+
+        foreach (self::NPM_SCRIPTS as $name => $commands) {
+            if (!array_key_exists($name, $scripts)) {
+                $actions[$name] = ['action' => 'add', 'command' => $commands['expected']];
+
+                continue;
+            }
+
+            if ($scripts[$name] === $commands['expected']) {
+                $actions[$name] = ['action' => 'skip', 'command' => $scripts[$name]];
+
+                continue;
+            }
+
+            if ($scripts[$name] === $commands['legacy']) {
+                $actions[$name] = ['action' => 'update', 'command' => $commands['expected']];
+
+                continue;
+            }
+
+            $actions[$name] = ['action' => $force ? 'replace' : 'conflict', 'command' => $force ? $commands['expected'] : $scripts[$name]];
+        }
+
+        return $actions;
+    }
+
+    /**
+     * The conflicts of the managed npm scripts (see NPM_SCRIPTS): the
+     * custom commands a sync without --force must not replace.
+     *
+     * @return list<string>
+     * @throws RuntimeException
+     * @throws UnexpectedValueException
+     */
+    private static function npmScriptConflicts(string $root, bool $force = false): array
+    {
+        $conflicts = [];
+
+        foreach (self::npmScriptActions($root, $force) as $name => $action) {
+            if ('conflict' === $action['action']) {
+                $conflicts[] = 'npm script ' . $name . ' in package.json (custom command: ' . $action['command'] . ')';
+            }
+        }
+
+        return $conflicts;
+    }
+
+    /**
      * Whether the caller package.json defines the given npm script - the
      * composer scripts for the node tooling are thin proxies and only apply
      * when the npm script they wrap exists.
@@ -608,6 +777,7 @@ final class Application
             'phpstan config'             => 'Resources/Quality/phpstan.neon',
             'phpunit xml renderer'       => 'Resources/Testing/renderPhpunitXml.php',
             'prettier config'            => 'Resources/Quality/prettier.config.mjs',
+            'prettier runner'            => 'Resources/Quality/prettier.mjs',
             'psbits-cgl skill'           => 'Resources/Skill/psbits-cgl/',
             'psbits-foundation skill'    => 'Resources/Skill/psbits-foundation/',
             'psbits-qa skill'            => 'Resources/Skill/psbits-qa/',
@@ -739,6 +909,15 @@ final class Application
             return self::npmScriptDefined($root, substr($condition, strlen('npm:')));
         }
 
+        if ('htmlxml' === $condition) {
+            /*
+             * The htmlxml tooling applies when the Prettier scope carries
+             * files and the npm scripts can be managed: a package.json
+             * (see npmScriptActions).
+             */
+            return [] !== self::npmScriptActions($root);
+        }
+
         if ('xlf' === $condition) {
             return [] !== XlfSorter::findFiles($root);
         }
@@ -833,6 +1012,8 @@ final class Application
             }
         }
 
+        $conflicts = array_merge($conflicts, self::npmScriptConflicts($root, $force));
+
         if ([] !== $conflicts) {
             foreach ($conflicts as $conflict) {
                 echo 'CONFLICT: ' . $conflict . "\n";
@@ -912,6 +1093,12 @@ final class Application
             }
         }
 
+        /*
+         * The npm scripts run before the composer scripts: the htmlxml
+         * composer proxies only apply when the npm scripts they wrap exist,
+         * so both converge in the same sync run.
+         */
+        self::syncNpmScripts($root, $dryRun, $force);
         self::syncScripts($root, $dryRun);
         self::syncAllowPlugins($root, $dryRun);
         self::syncGitignore($root, $dryRun);
@@ -1003,6 +1190,47 @@ final class Application
         }
 
         if (!$dryRun && false === file_put_contents($file, $content)) {
+            throw new RuntimeException('could not write ' . $file);
+        }
+    }
+
+    /**
+     * Applies the npm script actions to the caller package.json (see
+     * NPM_SCRIPTS), preserving all other values. The custom-command
+     * conflicts are reported in the sync validation phase, so an action of
+     * "conflict" cannot reach this method.
+     *
+     * @throws JsonException
+     * @throws RuntimeException
+     */
+    private static function syncNpmScripts(string $root, bool $dryRun = false, bool $force = false): void
+    {
+        $actions = self::npmScriptActions($root, $force);
+
+        if ([] === $actions) {
+            return;
+        }
+
+        $changed = false;
+
+        foreach ($actions as $name => $action) {
+            if ('skip' === $action['action']) {
+                continue;
+            }
+
+            $verbs = ['add' => ['added', 'add'], 'replace' => ['replaced', 'replace'], 'update' => ['updated', 'update']];
+            echo ($dryRun ? 'would ' . $verbs[$action['action']][1] : $verbs[$action['action']][0]) . ' npm script ' . $name . "\n";
+            $changed = true;
+        }
+
+        if ($dryRun || !$changed) {
+            return;
+        }
+
+        $file    = $root . '/package.json';
+        $encoded = self::applyNpmScriptActions((string) file_get_contents($file), $actions);
+
+        if (false === file_put_contents($file, $encoded)) {
             throw new RuntimeException('could not write ' . $file);
         }
     }
@@ -1129,6 +1357,52 @@ final class Application
             } else {
                 echo 'FAIL: gitignore entry ' . $entry . ' missing (run qa sync and commit)' . "\n";
                 $failed = 1;
+            }
+        }
+
+        return $failed;
+    }
+
+    /**
+     * Verifies that the caller package.json carries the managed htmlxml
+     * npm scripts (CI gate, see NPM_SCRIPTS): repositories without html,
+     * xml or xlf files in the Prettier scope or without a package.json
+     * are skipped. A missing scripts object requires synchronization.
+     *
+     * @throws UnexpectedValueException
+     */
+    private static function verifyNpmScripts(string $root): int
+    {
+        $file = $root . '/package.json';
+
+        if (!is_file($file) || !self::hasHtmlXmlFiles($root)) {
+            return 0;
+        }
+
+        $data = json_decode((string) file_get_contents($file), true);
+
+        if (!is_array($data)) {
+            echo 'FAIL: package.json is not valid JSON (run qa sync and commit)' . "\n";
+
+            return 1;
+        }
+
+        if (array_key_exists('scripts', $data) && !is_array($data['scripts'])) {
+            return 0;
+        }
+
+        $failed = 0;
+
+        foreach (self::NPM_SCRIPTS as $name => $commands) {
+            if (!array_key_exists($name, $data['scripts'] ?? [])) {
+                echo 'FAIL: npm script ' . $name . ' missing (run qa sync and commit)' . "\n";
+                $failed = 1;
+            } elseif ($data['scripts'][$name] !== $commands['expected']) {
+                echo 'FAIL: npm script ' . $name . ' deviates from the expected command (run qa sync and commit)' . "\n";
+                echo '  expected: ' . $commands['expected'] . "\n";
+                $failed = 1;
+            } else {
+                echo 'ok: npm script ' . $name . "\n";
             }
         }
 
