@@ -36,6 +36,7 @@ use function array_values;
 use function chmod;
 use function count;
 use function dirname;
+use function explode;
 use function file_get_contents;
 use function file_put_contents;
 use function implode;
@@ -83,6 +84,31 @@ final class Application
      * @var list<string>
      */
     private const array FIX_ALL_ORDER = ['fix:classes', 'fix:composer', 'fix:htmlxml', 'fix:json', 'fix:throws', 'fix:xlf', 'fix:php'];
+
+    /**
+     * The repository-root paths the shared tooling writes at runtime,
+     * listed in the append order for newly created .gitignore files:
+     * .Build (the resolved test matrix core and tool state),
+     * .php-cs-fixer.cache (the PHP CS Fixer cache),
+     * Build/Quality/.phpstan (the PHPStan tmp directory; the caller shim
+     * resolves tmpDir relative to its config file),
+     * composer-matrix.json and its lock (the per-leg test matrix
+     * environment), packages/autoload-tests (the class loading
+     * information dump of the oldest supported testing-framework, the
+     * test-context target of TYPO3 >= 14.3.1) and var (the TYPO3 v14.3
+     * asset:publish kernel boot on every Composer run).
+     *
+     * @var list<string>
+     */
+    private const array GITIGNORE_ENTRIES = [
+        '/.Build/',
+        '/.php-cs-fixer.cache',
+        '/Build/Quality/.phpstan/',
+        '/composer-matrix.json',
+        '/composer-matrix.lock',
+        '/packages/autoload-tests/',
+        '/var/',
+    ];
 
     /**
      * The canonical lint:all members besides the repository's own lint:*
@@ -159,14 +185,16 @@ final class Application
                     missing, test scripts based on *Test.php suites,
                     create test:all, lint:all, fix:all and qa when
                     missing), add the Composer allow-plugins entries the
-                    shared tooling requires, and report existing
-                    aggregates that deviate from the expected standard;
-                    warn about redundant dev requirements and core-blocking pins
+                    shared tooling requires, append the runtime .gitignore
+                    entries, and report existing aggregates that deviate
+                    from the expected standard; warn about redundant dev
+                    requirements and core-blocking pins
       qa check      Verify hook, skill links and caller CI workflow match
                     the installed package, verify that the caller
                     composer.json carries the shared QA scripts and the
-                    required Composer allow-plugins entries (CI gate);
-                    dev requirement warnings do not fail the check
+                    required Composer allow-plugins entries, and that the
+                    caller .gitignore carries the runtime entries (CI
+                    gate); dev requirement warnings do not fail the check
       qa sync --dry-run
                     Preview changes without writing files; conflicts fail
       qa sync --force
@@ -395,6 +423,7 @@ final class Application
 
         $failed |= self::verifyScripts($root);
         $failed |= self::verifyAllowPlugins($root);
+        $failed |= self::verifyGitignore($root);
         self::warnDevRequirements($root);
 
         return $failed;
@@ -885,6 +914,7 @@ final class Application
 
         self::syncScripts($root, $dryRun);
         self::syncAllowPlugins($root, $dryRun);
+        self::syncGitignore($root, $dryRun);
         self::warnDevRequirements($root);
 
         return 0;
@@ -936,6 +966,44 @@ final class Application
             if (false === file_put_contents($file, $encoded)) {
                 throw new RuntimeException('could not write ' . $file);
             }
+        }
+    }
+
+    /**
+     * Keeps the caller .gitignore in sync with the runtime directories the
+     * shared tooling writes below the repository root (see
+     * GITIGNORE_ENTRIES): the missing entries are appended at the end, the
+     * existing entries and every other line are left untouched.
+     *
+     * @throws RuntimeException
+     */
+    private static function syncGitignore(string $root, bool $dryRun = false): void
+    {
+        $file     = $root . '/.gitignore';
+        $content  = is_file($file) ? (string) file_get_contents($file) : '';
+        $existing = [];
+
+        foreach (explode("\n", $content) as $line) {
+            $existing[] = trim($line);
+        }
+
+        $missing = array_values(array_diff(self::GITIGNORE_ENTRIES, $existing));
+
+        if ([] === $missing) {
+            return;
+        }
+
+        if ('' !== $content && !str_ends_with($content, "\n")) {
+            $content .= "\n";
+        }
+
+        foreach ($missing as $entry) {
+            $content .= $entry . "\n";
+            echo ($dryRun ? 'would add gitignore entry ' : 'added gitignore entry ') . $entry . "\n";
+        }
+
+        if (!$dryRun && false === file_put_contents($file, $content)) {
+            throw new RuntimeException('could not write ' . $file);
         }
     }
 
@@ -1028,6 +1096,38 @@ final class Application
                 echo 'ok: allow-plugins.' . $plugin . "\n";
             } else {
                 echo 'FAIL: allow-plugins.' . $plugin . ' missing or not ' . json_encode($expected) . ' (run qa sync and commit)' . "\n";
+                $failed = 1;
+            }
+        }
+
+        return $failed;
+    }
+
+    /**
+     * Verifies that the caller .gitignore carries the entries for the
+     * runtime directories the shared tooling writes below the repository
+     * root (CI gate, see GITIGNORE_ENTRIES).
+     *
+     * @throws RuntimeException
+     */
+    private static function verifyGitignore(string $root): int
+    {
+        $file  = $root . '/.gitignore';
+        $lines = [];
+
+        if (is_file($file)) {
+            foreach (explode("\n", (string) file_get_contents($file)) as $line) {
+                $lines[] = trim($line);
+            }
+        }
+
+        $failed = 0;
+
+        foreach (self::GITIGNORE_ENTRIES as $entry) {
+            if (in_array($entry, $lines, true)) {
+                echo 'ok: gitignore entry ' . $entry . "\n";
+            } else {
+                echo 'FAIL: gitignore entry ' . $entry . ' missing (run qa sync and commit)' . "\n";
                 $failed = 1;
             }
         }

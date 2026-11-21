@@ -95,10 +95,24 @@ Composer plugins still need root authorization: sync adds missing
 `dealerdirect/phpcodesniffer-composer-installer`, preserves explicit disables,
 and check fails when either required authorization is missing or disabled.
 
+The runtime also writes below the repository root: `.Build/` holds the
+resolved test matrix core and tool state, `/.php-cs-fixer.cache` is the PHP
+CS Fixer cache, PHPStan's tmp directory lives in `Build/Quality/.phpstan/`
+(the caller shim resolves `tmpDir` relative to its config file), the per-leg
+test matrix environment is written to `/composer-matrix.json` (locked in
+`/composer-matrix.lock`), the unit test bootstrap of the oldest supported
+testing-framework dumps the class loading information into
+`packages/autoload-tests` (the test-context target since TYPO3 v14.3.1) and
+every TYPO3 v14.3 Composer run triggers the `asset:publish` console command,
+which boots the kernel and compiles the DI container below `var/cache`.
+`qa sync` appends the missing `.gitignore` entries for these paths to the end
+of the caller `.gitignore` - creating the file when missing, never rewriting
+existing lines - and `qa check` fails when an entry is missing.
+
 ### Safe synchronization
 
-`qa sync --dry-run` previews hook, workflow, skill and Composer script changes
-without writing files. Conflicting existing contents abort the entire sync
+`qa sync --dry-run` previews hook, workflow, skill, .gitignore and Composer
+script changes without writing files. Conflicting existing contents abort the entire sync
 before any file is changed. Review them and use `qa sync --force` only when
 you explicitly want to replace them (including existing skill directories).
 Combine both flags to preview a forced takeover.

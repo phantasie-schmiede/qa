@@ -1,4 +1,8 @@
 /.Build/
 /.php-cs-fixer.cache
+/Build/Quality/.phpstan/
+/composer-matrix.json
+/composer-matrix.lock
 /composer.lock
+/packages/autoload-tests/
 /var/

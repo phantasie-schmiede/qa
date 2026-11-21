@@ -76,6 +76,16 @@ are excluded. Entries are never removed automatically.
 Sync also adds missing root `allow-plugins` authorizations for Composer Normalize
 and the PHP_CodeSniffer Composer installer, preserving explicit disables. Check
 fails when a required authorization is missing or disabled.
+Sync also appends the runtime `.gitignore` entries the shared tooling writes
+below the repository root - `/.Build/` (the resolved test matrix core and
+tool state), `/.php-cs-fixer.cache` (the PHP CS Fixer cache),
+`/Build/Quality/.phpstan/` (the PHPStan tmp directory of the caller shim),
+`/composer-matrix.json` and `/composer-matrix.lock` (the per-leg test matrix
+environment), `/packages/autoload-tests/` (the unit test bootstrap of the
+oldest supported testing-framework) and `/var/` (the TYPO3 v14.3
+`asset:publish` kernel boot) - to the end of the caller `.gitignore`,
+creating the file when missing and never rewriting existing lines. Check
+fails when an entry is missing.
 
 The caller `composer.json` `scripts` section is part of the package-managed
 state. `bin/qa sync` adds the full set of shared scripts when missing, each
@@ -250,6 +260,10 @@ Only these QA files remain in the repository (everything else is shared):
 - `composer.json` - the `scripts` section and the `config.allow-plugins`
   entries of the shared tooling are kept in sync by `bin/qa sync`;
   repo-specific scripts (e.g. `test:unit:update-fixtures`) are never touched
+- `.gitignore` - the shared runtime entries (`.Build/`,
+  `.php-cs-fixer.cache`, `Build/Quality/.phpstan/`, `composer-matrix.json`,
+  `composer-matrix.lock`, `packages/autoload-tests/`, `var/`) are appended by
+  `bin/qa sync`; repo-specific entries are never touched
 - `.opencode/skills/psbits-qa`, `.opencode/skills/psbits-cgl`,
   `.opencode/skills/psbits-foundation` and
   `.opencode/skills/psbits-v14-compat` - symlinks into the package (created

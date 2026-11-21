@@ -200,6 +200,26 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
+    public function testCheckFailsOnMissingGitignoreEntries(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+        self::assertSame(0, Application::execute(['qa', 'sync']));
+
+        file_put_contents($this->root . '/.gitignore', "/node_modules/\n");
+
+        [$exit, $output] = $this->check();
+
+        self::assertSame(1, $exit);
+
+        foreach (['/.Build/', '/.php-cs-fixer.cache', '/Build/Quality/.phpstan/', '/composer-matrix.json', '/composer-matrix.lock', '/packages/autoload-tests/', '/var/'] as $entry) {
+            self::assertStringContainsString('FAIL: gitignore entry ' . $entry . ' missing (run qa sync and commit)', $output);
+        }
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testCheckFailsOnMissingSharedScript(): void
     {
         $this->writeRepositoryFixtures();
@@ -666,6 +686,32 @@ final class ApplicationTest extends TestCase
     }
 
     /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncAppendsMissingGitignoreEntriesAtTheEnd(): void
+    {
+        $this->writeRepositoryFixtures();
+        file_put_contents($this->root . '/.gitignore', "/.Build/\n/composer.lock\n");
+        chdir($this->root);
+
+        $output = $this->sync();
+
+        foreach (['/.php-cs-fixer.cache', '/Build/Quality/.phpstan/', '/composer-matrix.json', '/composer-matrix.lock', '/packages/autoload-tests/', '/var/'] as $entry) {
+            self::assertStringContainsString('added gitignore entry ' . $entry, $output);
+        }
+
+        self::assertSame("/.Build/\n/composer.lock\n/.php-cs-fixer.cache\n/Build/Quality/.phpstan/\n/composer-matrix.json\n/composer-matrix.lock\n/packages/autoload-tests/\n/var/\n", (string) file_get_contents($this->root . '/.gitignore'));
+
+        // The maintainer aligns the aggregates with the reported standard.
+        $scripts             = $this->composerScripts();
+        $scripts['lint:all'] = ['@analyze:php', '@audit:composer', '@lint:composer', '@lint:php', '@lint:xlf', '@validate:composer'];
+        $scripts['fix:all']  = ['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'];
+        $this->writeRepositoryFixtures($scripts);
+
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
      * @throws Exception
      * @throws ExpectationFailedException
      */
@@ -711,6 +757,31 @@ final class ApplicationTest extends TestCase
     /**
      * @throws ExpectationFailedException
      */
+    public function testSyncCreatesMissingGitignore(): void
+    {
+        $this->writeRepositoryFixtures();
+        chdir($this->root);
+
+        $output = $this->sync();
+
+        foreach (['/.Build/', '/.php-cs-fixer.cache', '/Build/Quality/.phpstan/', '/composer-matrix.json', '/composer-matrix.lock', '/packages/autoload-tests/', '/var/'] as $entry) {
+            self::assertStringContainsString('added gitignore entry ' . $entry, $output);
+        }
+
+        self::assertSame("/.Build/\n/.php-cs-fixer.cache\n/Build/Quality/.phpstan/\n/composer-matrix.json\n/composer-matrix.lock\n/packages/autoload-tests/\n/var/\n", (string) file_get_contents($this->root . '/.gitignore'));
+
+        // The maintainer aligns the aggregates with the reported standard.
+        $scripts             = $this->composerScripts();
+        $scripts['lint:all'] = ['@analyze:php', '@audit:composer', '@lint:composer', '@lint:php', '@lint:xlf', '@validate:composer'];
+        $scripts['fix:all']  = ['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'];
+        $this->writeRepositoryFixtures($scripts);
+
+        self::assertSame(0, $this->check()[0]);
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
     public function testSyncCustomFixersRunBeforeFinalPhpFormatter(): void
     {
         $this->writeCsFixerShim();
@@ -739,10 +810,43 @@ final class ApplicationTest extends TestCase
         self::assertSame(0, $exit);
         self::assertStringContainsString('would sync pre-commit hook', $output);
         self::assertStringContainsString('would add script', $output);
+        self::assertStringContainsString('would add gitignore entry /packages/autoload-tests/', $output);
+        self::assertStringContainsString('would add gitignore entry /var/', $output);
         self::assertSame($composer, file_get_contents($this->root . '/composer.json'));
         self::assertFileDoesNotExist($this->root . '/.git/hooks/pre-commit');
+        self::assertFileDoesNotExist($this->root . '/.gitignore');
         self::assertDirectoryDoesNotExist($this->root . '/.github');
         self::assertDirectoryDoesNotExist($this->root . '/.opencode');
+    }
+
+    /**
+     * @throws ExpectationFailedException
+     */
+    public function testSyncGitignoreIsIdempotentAndPreservesContent(): void
+    {
+        $this->writeRepositoryFixtures();
+        /*
+         * The existing entries carry no trailing newline; the missing
+         * managed entries must be appended without rewriting the first line.
+         */
+        file_put_contents($this->root . '/.gitignore', "/.Build/\n/packages/autoload-tests/");
+        chdir($this->root);
+        $this->sync();
+
+        $file = $this->root . '/.gitignore';
+        self::assertSame("/.Build/\n/packages/autoload-tests/\n/.php-cs-fixer.cache\n/Build/Quality/.phpstan/\n/composer-matrix.json\n/composer-matrix.lock\n/var/\n", (string) file_get_contents($file));
+
+        $before = (string) file_get_contents($file);
+        $this->sync();
+        self::assertSame($before, (string) file_get_contents($file));
+
+        // The maintainer aligns the aggregates with the reported standard.
+        $scripts             = $this->composerScripts();
+        $scripts['lint:all'] = ['@analyze:php', '@audit:composer', '@lint:composer', '@lint:php', '@lint:xlf', '@validate:composer'];
+        $scripts['fix:all']  = ['@fix:composer', '@fix:throws', '@fix:xlf', '@fix:php'];
+        $this->writeRepositoryFixtures($scripts);
+
+        self::assertSame(0, $this->check()[0]);
     }
 
     /**
