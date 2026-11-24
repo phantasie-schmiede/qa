@@ -73,6 +73,7 @@ cp "$SCRIPT_DIR/../Docker/Dockerfile" "$BUILD_CONTEXT/Dockerfile"
 for php in 8.3 8.4 8.5; do
     echo "Building psbits/${EXTENSION}-test:$php ..."
     docker build \
+        --pull \
         --build-arg php_version="$php" \
         --build-arg USER_UID="$(id -u)" \
         --build-arg USER_GID="$(id -g)" \

@@ -105,6 +105,11 @@ fi
 
 local_preflight "$DB"
 
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/runtime.sh"
+prepare_test_runtime
+trap cleanup_test_runtime EXIT
+
 PHP_FULL="$(php -r 'echo PHP_VERSION;')"
 LOWEST_NOTE=''
 if [ -n "$LOWEST" ]; then

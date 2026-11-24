@@ -26,6 +26,11 @@ REPO_ROOT="${PSBITS_QA_REPO_ROOT:-$(pwd)}"
 . "$SCRIPT_DIR/console.sh"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/preflight.sh"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/runtime.sh"
+# Used by cleanup_test_runtime() before preparation succeeds.
+# shellcheck disable=SC2034
+TEST_RUNTIME=''
 
 LEG_NO=0
 LEG_TOTAL=4
@@ -51,11 +56,16 @@ print_summary() {
         printf '%s%s of %s legs failed.%s\n' "$_C_RED" "$FAILED" "$LEG_TOTAL" "$_C_RESET"
     fi
 }
-trap print_summary EXIT
+on_exit() {
+    print_summary
+    cleanup_test_runtime
+}
+trap on_exit EXIT
 
 if [ $# -eq 0 ]; then
     banner "Test preparation (local) — checking PHP, Composer and SQLite for functional tests"
     local_preflight sqlite
+    prepare_test_runtime
     echo "The matrix resolves dependencies from Composer repositories. For Docker instead: composer docker:images, then composer test:docker."
     PHP_FULL="$(php -r 'echo PHP_VERSION;')"
     banner "Test matrix (local) — PHP ${PHP_FULL} — legs: 13.4, 14.3, 13.4 (lowest), 14.3 (lowest)"
@@ -82,4 +92,4 @@ if [ $# -eq 0 ]; then
     exit "$FAILED"
 fi
 
-exec sh "$SCRIPT_DIR/runTests.sh" "$@"
+sh "$SCRIPT_DIR/runTests.sh" "$@"

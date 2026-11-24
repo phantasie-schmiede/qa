@@ -48,8 +48,13 @@ export PSBITS_QA_EXTENSION="${PSBITS_QA_EXTENSION:-$(basename "$REPO_ROOT")}"
 # tear down containers belonging to an earlier run.
 docker_preflight
 
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/runtime.sh"
+prepare_test_runtime
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-psbits-${PSBITS_QA_EXTENSION}-tests}"
+
 compose() {
-    docker compose -f "$SCRIPT_DIR/../Docker/docker-compose.yml" "$@"
+    docker compose -f "$SCRIPT_DIR/../Docker/docker-compose.yml" -p "$COMPOSE_PROJECT_NAME" "$@"
 }
 
 LEG_NO=0
@@ -97,13 +102,20 @@ restore_host_install() {
 
     if ! composer install --no-scripts --no-interaction; then
         echo "Warning: could not restore the host Composer installation; run composer install manually." >&2
+        return 1
     fi
 }
 
 on_exit() {
+    STATUS=$?
+    trap - EXIT
     cleanup
     print_summary
-    restore_host_install
+    if ! restore_host_install; then
+        [ "$STATUS" -ne 0 ] || STATUS=1
+    fi
+    cleanup_test_runtime
+    exit "$STATUS"
 }
 trap on_exit EXIT
 
@@ -112,7 +124,7 @@ trap on_exit EXIT
 run_leg() {
     SERVICE="$1"
     shift
-    compose run --rm "$SERVICE" sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runTests.sh "$@"
+    compose run --rm "$SERVICE" sh "/repo${SCRIPT_DIR#"$REPO_ROOT"}/runTests.sh" "$@"
 }
 
 if [ $# -eq 0 ]; then
@@ -126,7 +138,7 @@ if [ $# -eq 0 ]; then
         shift 2
         LEG_NO=$((LEG_NO + 1))
         banner "Leg ${LEG_NO}/${LEG_TOTAL} — ${DESC}"
-        if compose run --rm "$SERVICE" sh .Build/vendor/psbits/qa/Resources/Testing/Scripts/runTests.sh "$@"; then
+        if run_leg "$SERVICE" "$@"; then
             record_result "PASSED" "Leg ${LEG_NO}/${LEG_TOTAL} — ${DESC}"
             banner green "Leg ${LEG_NO}/${LEG_TOTAL} — PASSED"
         else

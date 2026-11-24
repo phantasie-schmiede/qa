@@ -29,7 +29,7 @@ final class TestPreflightTest extends TestCase
         file_put_contents($this->root . '/composer.json', '{}');
         file_put_contents($this->root . '/vendor-sentinel', 'unchanged');
 
-        foreach (['dirname', 'sh'] as $tool) {
+        foreach (['cp', 'dirname', 'mkdir', 'mktemp', 'rm', 'sh'] as $tool) {
             symlink('/usr/bin/' . $tool, $this->root . '/bin/' . $tool);
         }
     }
@@ -72,13 +72,85 @@ final class TestPreflightTest extends TestCase
      * @throws ExpectationFailedException
      * @throws ValueError
      */
+    public function testDockerMatrixSurvivesRemovedVendorInfrastructure(): void
+    {
+        $scripts = $this->installTestingInfrastructure();
+        $this->tool('composer', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/composer-calls"');
+        $this->tool('docker', <<<'SH'
+echo "$*" >> "$PSBITS_QA_REPO_ROOT/docker-calls"
+if [ "$1" = compose ] && [ "$2" = -f ]; then
+    [ -f "$3" ] || exit 90
+    [ "$4" = -p ] && [ "$5" = psbits-fixture-tests ] || exit 91
+    if [ "$6" = run ]; then
+        shift 9
+        runner="$PSBITS_QA_REPO_ROOT${1#/repo}"
+        [ -f "$runner" ] || exit 92
+        echo run >> "$PSBITS_QA_REPO_ROOT/legs"
+        if [ -d "$PSBITS_QA_REPO_ROOT/.Build/vendor" ]; then
+            rm -rf "$PSBITS_QA_REPO_ROOT/.Build/vendor"
+            exit 1
+        fi
+    fi
+fi
+SH);
+        [$code, $output] = $this->process(['/bin/sh', $scripts . '/runDockerTests.sh']);
+        self::assertSame(1, $code, $output);
+        self::assertSame(str_repeat("run\n", 8), file_get_contents($this->root . '/legs'));
+        self::assertStringContainsString('1 of 8 legs failed.', $output);
+        self::assertStringNotContainsString('could not stop', $output);
+        self::assertStringContainsString('down', (string) file_get_contents($this->root . '/docker-calls'));
+        self::assertSame([], glob($this->root . '/.Build/qa-runtime/run-*'));
+        self::assertSame("install --no-scripts --no-interaction\n", file_get_contents($this->root . '/composer-calls'));
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
     public function testFailedLegStillRestoresHostComposerInstallation(): void
     {
-        $this->tool('docker', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/docker-calls"; [ "$4" != run ]');
+        $this->tool('docker', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/docker-calls"; [ "$6" != run ]');
         $this->tool('composer', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/composer-calls"');
         [$code, $output] = $this->runScript('runDockerTests.sh', ['13.4']);
         self::assertNotSame(0, $code, $output);
         self::assertSame("install --no-scripts --no-interaction\n", file_get_contents($this->root . '/composer-calls'));
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
+    public function testFailedRestoreFailsSuccessfulRunAndPreservesMatrixFailure(): void
+    {
+        $this->docker('never');
+        $this->tool('composer', 'exit 1');
+        [$code, $output] = $this->runScript('runDockerTests.sh', ['13.4']);
+        self::assertSame(1, $code, $output);
+        self::assertStringContainsString('could not restore the host Composer installation', $output);
+        self::assertSame([], glob($this->root . '/.Build/qa-runtime/run-*'));
+        $this->tool('docker', '[ "$6" != run ] || exit 7');
+        [$code, $output] = $this->runScript('runDockerTests.sh', ['13.4']);
+        self::assertSame(7, $code, $output);
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
+    public function testImageBuildPullsEveryBaseImage(): void
+    {
+        foreach (['basename', 'find', 'id', 'tr', 'wc'] as $tool) {
+            symlink('/usr/bin/' . $tool, $this->root . '/bin/' . $tool);
+        }
+
+        $this->docker('never');
+        [$code, $output] = $this->runScript('buildTestImages.sh', [], false, ['EXTRA_CA_FILES' => '/nonexistent']);
+        self::assertSame(0, $code, $output);
+        $calls = (string) file_get_contents($this->root . '/docker-calls');
+        self::assertSame(3, substr_count($calls, 'build --pull --build-arg php_version='));
     }
 
     /**
@@ -100,9 +172,28 @@ final class TestPreflightTest extends TestCase
      * @throws ExpectationFailedException
      * @throws ValueError
      */
+    public function testLocalMatrixSurvivesComposerFailureAfterVendorRemoval(): void
+    {
+        $scripts = $this->installTestingInfrastructure();
+        symlink('/usr/bin/grep', $this->root . '/bin/grep');
+        $this->tool('php', 'exec ' . escapeshellarg(PHP_BINARY) . ' "$@"');
+        $this->tool('composer', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/composer-calls"; [ "$1" != update ]');
+        [$code, $output] = $this->process(['/bin/sh', $scripts . '/runLocalTests.sh']);
+        self::assertSame(4, $code, $output);
+        self::assertSame(4, substr_count((string) file_get_contents($this->root . '/composer-calls'), 'update --with'));
+        self::assertStringContainsString('4 of 4 legs failed.', $output);
+        self::assertStringNotContainsString('cannot open', $output);
+        self::assertSame([], glob($this->root . '/.Build/qa-runtime/run-*'));
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
     public function testLowestLegUsesCurrentQaInfrastructure(): void
     {
-        foreach (['cp', 'grep', 'rm'] as $tool) {
+        foreach (['grep'] as $tool) {
             symlink('/usr/bin/' . $tool, $this->root . '/bin/' . $tool);
         }
 
@@ -295,6 +386,21 @@ final class TestPreflightTest extends TestCase
     private function docker(string $failure): void
     {
         $this->tool('docker', 'echo "$*" >> "$PSBITS_QA_REPO_ROOT/docker-calls"' . "\n" . '[ "$1" != ' . escapeshellarg($failure) . ' ]');
+    }
+
+    /**
+     * @throws Exception
+     * @throws ExpectationFailedException
+     * @throws ValueError
+     */
+    private function installTestingInfrastructure(): string
+    {
+        $target = $this->root . '/.Build/vendor/psbits/qa/Resources';
+        mkdir($target, 0755, true);
+        [$code, $output] = $this->process(['/usr/bin/cp', '-R', dirname(__DIR__, 2) . '/Resources/Testing', $target . '/Testing']);
+        self::assertSame(0, $code, $output);
+
+        return $target . '/Testing/Scripts';
     }
 
     /** @param list<string> $command

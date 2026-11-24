@@ -219,13 +219,24 @@ not that their command text matches the package default.
 - Before `composer test:docker`, run `composer docker:images`. Docker and Compose
   must be available, the daemon reachable, and the selected test image present.
   `PHP_VERSION` selects the image tag (default: 8.4). Rebuild after Dockerfile or
-  additional CA certificate changes.
+   additional CA certificate changes. Builds use `--pull` to refresh the PHP base
+   images while retaining the build cache. Rebuild when security advisories
+   exclude the PHP patch version in an existing image; do not disable the checks.
 
 The runners abort on missing prerequisites before resolving dependencies or
 starting containers. Single-leg runs are checked too. The local matrix checks
 preparation before its first leg rather than reporting the same setup failure
 four times. Dependency resolution still needs repository/network access;
 preparation checks cannot guarantee successful downloads or successful tests.
+
+Test orchestration is copied into a per-run `.Build/qa-runtime/` snapshot before
+dependency changes. Local and Docker runners continue using that snapshot when
+a core switch removes `.Build/vendor`, even if Composer fails to reinstall it.
+Docker uses a stable Compose project name (`psbits-<extension>-tests`, overridable
+with `COMPOSE_PROJECT_NAME`). Its snapshot remains available through container
+cleanup and host dependency restoration, then is removed. A failed host restore
+also fails the command without masking an earlier matrix failure. Do not run
+multiple matrices concurrently in the same repository: they share `.Build/vendor`.
 
 ## Linting the package itself
 
